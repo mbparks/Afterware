@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRT-80 // INTRUSION DECK</title>
+<title>AFTERWARE</title>
 <style>
 /* ============================================================
    THEME TOKENS  (engine-level defaults; campaigns may override)
@@ -216,6 +216,7 @@ body{
   color:var(--alert-red);border-color:#3a1010;}
 .cell.src{color:var(--alert-cyan);border-color:var(--alert-cyan);}
 .cell.sink{color:var(--alert-amber);border-color:var(--alert-amber);}
+.cell.hint{background:rgba(95,230,255,.10);border-color:rgba(95,230,255,.28);}
 .seqsym{font-size:30px;letter-spacing:10px;min-height:40px;color:var(--alert-cyan);}
 .bar-track{position:relative;height:26px;border:1px solid var(--phosphor-dim);margin:14px 0;overflow:hidden;}
 .bar-zone{position:absolute;top:0;bottom:0;background:rgba(60,255,120,.22);border-left:1px solid var(--phosphor);border-right:1px solid var(--phosphor);}
@@ -251,6 +252,63 @@ body{
 @media (max-width:1180px){
   #sticky{ right:6px; top:-2px; transform:rotate(4deg) scale(.92); }
 }
+
+/* ---- HUD additions: proof + objective ---- */
+#hud .coin{color:var(--alert-amber);}
+#objbar{
+  flex:0 0 auto; font-size:11px; letter-spacing:.6px; color:var(--alert-cyan);
+  text-shadow:0 0 6px rgba(95,230,255,.4);
+  border-bottom:1px solid var(--phosphor-faint); padding-bottom:5px; margin-bottom:8px;
+  opacity:0; transition:opacity .4s; min-height:16px;
+}
+#objbar.live{opacity:.85;}
+#objbar .label{color:var(--phosphor-dim);}
+
+/* ---- effects intensity / reduce-motion ---- */
+body.fx-reduced #flicker{display:none;}
+body.fx-reduced #refresh{opacity:.35;}
+body.fx-reduced #scanlines{opacity:.38;}
+body.fx-reduced #grain{display:none;}
+body.fx-reduced #screen.glitch{animation-duration:.16s;}
+body.fx-min #flicker,body.fx-min #refresh,body.fx-min #grain{display:none !important;}
+body.fx-min #scanlines{display:none !important;}
+body.fx-min #vignette{box-shadow:inset 0 0 80px 12px rgba(0,0,0,.6);}
+body.fx-min #screen.glitch{animation:none !important;}
+body.fx-min #screen.aberrate #crt-content{animation:none !important;}
+body.fx-min #cursor{animation:none;opacity:1;}
+
+/* ---- settings / import overlay ---- */
+#settings{
+  position:absolute; inset:0; z-index:40; display:none;
+  background:rgba(2,8,4,.95); padding:30px 38px; flex-direction:column;
+  color:var(--phosphor); text-shadow:var(--glow); font-size:14px;
+}
+#settings.open{display:flex;}
+#settings .stitle{font-size:13px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--alert-cyan);border-bottom:1px solid var(--phosphor-faint);
+  padding-bottom:8px;margin-bottom:16px;text-shadow:0 0 7px rgba(95,230,255,.5);}
+#settings .sbody{flex:1;overflow:auto;}
+#settings .srow{display:flex;align-items:center;gap:14px;margin:14px 0;}
+#settings .skey{width:150px;color:var(--phosphor-dim);text-transform:uppercase;font-size:12px;letter-spacing:1px;}
+#settings .sval{min-width:120px;}
+.sbtn{font-family:var(--mono);background:#0c1a10;color:var(--phosphor);
+  border:1px solid var(--phosphor-dim);padding:4px 11px;cursor:pointer;letter-spacing:1px;
+  border-radius:3px;font-size:13px;}
+.sbtn:hover{background:#13301c;box-shadow:0 0 8px rgba(60,255,120,.35);}
+.sbtn.mini{padding:2px 9px;font-size:14px;}
+#vol-bar{display:inline-flex;gap:3px;vertical-align:middle;margin:0 6px;}
+#vol-bar i{width:9px;height:14px;background:var(--phosphor-faint);display:inline-block;}
+#vol-bar i.on{background:var(--phosphor);box-shadow:0 0 6px rgba(60,255,120,.5);}
+#settings .sfoot{border-top:1px solid var(--phosphor-faint);padding-top:10px;margin-top:8px;
+  font-size:12px;color:var(--phosphor-dim);letter-spacing:.5px;}
+#imp-area{width:100%;height:118px;background:#020b05;color:var(--phosphor);
+  border:1px solid var(--phosphor-dim);font-family:var(--mono);font-size:12px;padding:8px;
+  resize:none;margin-top:6px;}
+#imp-msg{font-size:12px;margin-top:6px;min-height:16px;}
+
+/* ---- ASCII logo ---- */
+.logo-line{white-space:pre;font-size:13px;line-height:1.05;}
+@media (max-width:760px){ .logo-line{font-size:9px;} }
 </style>
 </head>
 <body>
@@ -261,11 +319,13 @@ body{
         <div id="hud">
           <span class="seg"><span class="label">USER</span> <span id="hud-user">--</span></span>
           <span class="seg"><span class="label">NODE</span> <span id="hud-node">offline</span></span>
+          <span class="seg"><span class="label">PROOF</span> <span id="hud-proof" class="coin">0</span></span>
           <span id="trace-wrap"><span class="label">TRACE</span>
             <span id="trace-bar"><span id="trace-fill"></span></span>
             <span id="trace-pct">0%</span>
           </span>
         </div>
+        <div id="objbar"><span class="label">OBJ</span> <span id="hud-obj">standby</span></div>
         <div id="terminal"></div>
         <div id="inputline">
           <span id="prompt"></span><span id="cmd"></span><span id="cursor">█</span>
@@ -275,6 +335,28 @@ body{
         <div class="ptitle" id="puzzle-title"></div>
         <div class="pbody" id="puzzle-body"></div>
         <div class="pfoot" id="puzzle-foot"></div>
+      </div>
+      <div id="settings">
+        <div class="stitle">deck settings</div>
+        <div class="sbody">
+          <div class="srow"><span class="skey">volume</span>
+            <span class="sval"><button class="sbtn mini" id="vol-down">&minus;</button>
+            <span id="vol-bar"></span>
+            <button class="sbtn mini" id="vol-up">+</button></span></div>
+          <div class="srow"><span class="skey">effects</span>
+            <span class="sval"><button class="sbtn" id="fx-btn">FULL</button></span>
+            <span class="skey" style="width:auto;opacity:.6">scanlines / flicker / glitch</span></div>
+          <div class="srow"><span class="skey">phosphor</span>
+            <span class="sval"><button class="sbtn" id="theme-btn">GREEN</button></span>
+            <span class="skey" style="width:auto;opacity:.6">screen tint</span></div>
+          <div class="srow" style="display:block">
+            <span class="skey">import campaign (paste JSON)</span>
+            <textarea id="imp-area" placeholder="paste a campaign object or JSON here, then Load"></textarea>
+            <button class="sbtn" id="imp-load" style="margin-top:6px">LOAD PACK</button>
+            <div id="imp-msg"></div>
+          </div>
+        </div>
+        <div class="sfoot">click a control to change it &nbsp; | &nbsp; [ESC] close</div>
       </div>
       <div id="scanlines"></div>
       <div id="refresh"></div>
@@ -299,7 +381,7 @@ body{
 <script>
 "use strict";
 /* ============================================================================
-   CRT-80 INTRUSION DECK  -  single-file hacking simulator (v0.1)
+   AFTERWARE  -  single-file hacking simulator (v0.1)
    ----------------------------------------------------------------------------
    ARCHITECTURE MAP (search these headers):
      [CONFIG]      tunable constants + theme
@@ -327,6 +409,14 @@ const CONFIG = {
   charset: "ACDEFHKNRSTX034789",
 };
 
+const LOGO=[
+  "    _    _____ _____ _____ ______        ___    ____  _____ ",
+  "   / \\  |  ___|_   _| ____|  _ \\ \\      / / \\  |  _ \\| ____|",
+  "  / _ \\ | |_    | | |  _| | |_) \\ \\ /\\ / / _ \\ | |_) |  _|  ",
+  " / ___ \\|  _|   | | | |___|  _ < \\ V  V / ___ \\|  _ <| |___ ",
+  "/_/   \\_\\_|     |_| |_____|_| \\_\\ \\_/\\_/_/   \\_\\_| \\_\\_____|"
+];
+
 /* ============================== [BUS] ===================================== */
 const Bus = (() => {
   const map = {};
@@ -346,15 +436,15 @@ const pick = arr => arr[rand(arr.length)];
 /* ============================= [AUDIO] ==================================== */
 /* Synthesized only - mechanical keys, beeps, modem warble, hum bed, alarm.   */
 const Audio = (() => {
-  let ctx=null, hum=null, humGain=null, muted=false, started=false;
-  function ac(){ if(!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); } return ctx; }
+  let ctx=null, master=null, hum=null, humGain=null, muted=false, started=false, volume=0.7;
+  function ac(){ if(!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); master=ctx.createGain(); master.gain.value=volume; master.connect(ctx.destination); } return ctx; }
   function ensure(){ if(ctx && ctx.state==="suspended") ctx.resume(); }
   function blip(freq, dur, type="square", vol=0.06){
     if(muted) return;
     const c=ac(); ensure();
     const o=c.createOscillator(), g=c.createGain();
     o.type=type; o.frequency.value=freq;
-    o.connect(g); g.connect(c.destination);
+    o.connect(g); g.connect(master);
     const t=c.currentTime;
     g.gain.setValueAtTime(0,t);
     g.gain.linearRampToValueAtTime(vol,t+0.005);
@@ -371,7 +461,7 @@ const Audio = (() => {
     n.buffer=buf;
     const f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=hp;
     const g=c.createGain(); g.gain.value=vol;
-    n.connect(f); f.connect(g); g.connect(c.destination);
+    n.connect(f); f.connect(g); g.connect(master);
     n.start(); n.stop(c.currentTime+dur);
   }
   return {
@@ -392,12 +482,14 @@ const Audio = (() => {
       if(hum||muted) return; const c=ac(); ensure();
       hum=c.createOscillator(); humGain=c.createGain();
       hum.type="sine"; hum.frequency.value=60;
-      humGain.gain.value=0.015; hum.connect(humGain); humGain.connect(c.destination); hum.start();
+      humGain.gain.value=0.015; hum.connect(humGain); humGain.connect(master); hum.start();
     },
     humStop(){ if(hum){ try{hum.stop();}catch(e){} hum=null; } },
     alarm(){ blip(740,0.12,"square",0.06); setTimeout(()=>blip(540,0.14,"square",0.06),130); },
-    toggleMute(){ muted=!muted; if(muted) this.humStop(); return muted; },
-    isMuted(){ return muted; }
+    toggleMute(){ muted=!muted; if(muted) this.humStop(); else this.humStart(); return muted; },
+    isMuted(){ return muted; },
+    setVolume(v){ volume=Math.max(0,Math.min(1,v)); if(master) master.gain.value=volume; },
+    getVolume(){ return volume; }
   };
 })();
 
@@ -477,13 +569,22 @@ const Term = (() => {
 
 /* ============================= [STATE] ==================================== */
 const State = {
-  mode:"boot",          // boot | terminal | puzzle | menu | end
+  mode:"boot",          // boot | terminal | puzzle | menu | choice | end
   user:"guest",
   campaign:null,        // active campaign object
   missionIndex:0,
   connectedTo:null,     // target id currently connected
   accessGranted:false,  // puzzle solved on current target
   downloaded:{},        // objectiveFile -> true
+  credits:0,            // "proof" earned from contracts
+  tools:{ scrubber:false, analyzer:false, failsafe:0 },   // loadout
+  coverUses:0,          // 'cover' uses spent on current connection
+  filesSeen:{},         // file -> true (first-read reactions)
+  stats:{ filesRead:0, nearMiss:false, puzzleFails:0 },    // per-connection
+  history:[],           // command history
+  histIdx:0,
+  choice:null,          // pending finale choice key
+  settings:{ volume:0.7, fx:"full", theme:"green" },
   get mission(){ return this.campaign ? this.campaign.missions[this.missionIndex] : null; },
   get target(){ return this.connectedTo ? this.campaign.targets[this.connectedTo] : null; },
   prompt(){
@@ -560,6 +661,7 @@ const Puzzles = (() => {
     bump(n){ Trace.bump(n); },
     fail(msg){
       Audio.err();
+      State.stats.puzzleFails++;
       const n=document.createElement("div"); n.className="failnote"; n.textContent="// "+msg;
       $("#puzzle-body").appendChild(n);
       setTimeout(()=>{ if(n.parentNode) n.remove(); }, 1400);
@@ -613,6 +715,7 @@ Puzzles.register("passcrack", (spec, api) => {
   }
   drawCur();
   api.foot("type "+len+" glyphs from charset  |  ENTER submit  |  BACKSPACE delete");
+  if(spec.assist){ const p=rand(len); guesses.appendChild(el("div","c-amber","// analyzer: lane "+(p+1)+" resolves to '"+answer[p]+"'.")); }
   function score(g){
     const fb=Array(len).fill("absent");
     const ansArr=answer.split(""); const used=Array(len).fill(false);
@@ -656,6 +759,7 @@ Puzzles.register("decrypt", (spec, api) => {
   }
   draw();
   api.foot("UP/DOWN rotate offset  |  ENTER confirm decode");
+  if(spec.assist){ api.body.appendChild(el("div","c-amber","// analyzer: plaintext opens with '"+plain[0]+"'.")); }
   return {
     onInput(e){
       if(e.key==="ArrowUp"||e.key==="+"||e.key==="="){ trial=(trial+1)%26; Audio.type(); draw(); }
@@ -690,7 +794,7 @@ Puzzles.register("seqlock", (spec, api) => {
       else { clearInterval(iv); disp.textContent="";
         setTimeout(()=>{ phase="input"; status.textContent="REPLAY SEQUENCE "+(r+1)+"/"+rounds.length;
           api.foot("arrow keys to replay the pattern"); disp.textContent="_ ".repeat(seq.length).trim(); },350); }
-    },520);
+    },(spec.assist?780:520));
     api._iv=iv;
   }
   startRound();
@@ -719,6 +823,16 @@ Puzzles.register("route", (spec, api) => {
   const walls=new Set((spec.walls||[[1,2],[2,2],[3,2],[1,4],[2,4],[4,4],[4,1],[4,3],[2,5]]).map(p=>p[0]+","+p[1]));
   const src=spec.src||[0,0], sink=spec.sink||[h-1,w-1];
   let cur=[...src]; const path=new Set([cur[0]+","+cur[1]]);
+  const hint=new Set();
+  if(spec.assist){ // BFS the maze and mark the shortest route as a faint hint
+    const par={}, start=src[0]+","+src[1], goal=sink[0]+","+sink[1], q=[start], seen=new Set([start]);
+    while(q.length){ const cell=q.shift(); if(cell===goal) break;
+      const [r,c]=cell.split(",").map(Number);
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nk=(r+dr)+","+(c+dc);
+        if(r+dr<0||c+dc<0||r+dr>=h||c+dc>=w||walls.has(nk)||seen.has(nk)) continue;
+        seen.add(nk); par[nk]=cell; q.push(nk); } }
+    let n=goal; while(n && n!==start){ hint.add(n); n=par[n]; }
+  }
   const grid=el("div","grid"); grid.style.gridTemplateColumns="repeat("+w+",30px)";
   api.body.appendChild(grid);
   function draw(){
@@ -726,6 +840,7 @@ Puzzles.register("route", (spec, api) => {
     for(let r=0;r<h;r++)for(let c=0;c<w;c++){
       const key=r+","+c; let cls="cell"; let t="";
       if(walls.has(key)){ cls+=" wall"; t="\u2588"; }
+      if(hint.has(key) && !path.has(key)) cls+=" hint";
       if(path.has(key)) cls+=" path";
       if(r===src[0]&&c===src[1]){ cls+=" src"; t="S"; }
       if(r===sink[0]&&c===sink[1]){ cls+=" sink"; t="X"; }
@@ -758,7 +873,7 @@ Puzzles.register("intercept", (spec, api) => {
   const pips=el("div","lockpips");
   track.append(zone,marker); api.body.append(status,track,pips);
   function setRound(){
-    locked=false; zoneW=Math.max(9,22-done*5); zoneStart=12+rand(66);
+    locked=false; zoneW=Math.max(9,22-done*5)+(spec.assist?8:0); zoneStart=12+rand(66);
     if(zoneStart+zoneW>96) zoneStart=96-zoneW;
     speed=1.1+done*0.5;
     zone.style.left=zoneStart+"%"; zone.style.width=zoneW+"%";
@@ -798,6 +913,8 @@ const Commands = (() => {
       (obj.aliases||[]).forEach(a=>reg[a]=obj); },
     get(n){ return reg[n]; },
     visible(){ return order.map(n=>reg[n]).filter(c=>!c.hidden); },
+    names(){ return Object.keys(reg); },
+    primary(){ return order.slice(); },
     async run(line){
       const parts=line.trim().split(/\s+/);
       const name=(parts.shift()||"").toLowerCase();
@@ -841,6 +958,72 @@ const Continue = {
 
 /* ===================== [GAME] flow controller ============================= */
 const Game = {
+  updateObj(){
+    const o=$("#hud-obj"); const m=State.mission;
+    if(!m){ o.textContent="standby"; return; }
+    let t;
+    if(!State.connectedTo) t="locate and connect to "+m.targetId;
+    else if(!State.accessGranted) t="breach the locked subsystem with '"+m.unlockCmd+"'";
+    else if(!State.downloaded[m.objective]) t="exfiltrate "+m.objective;
+    else t="disconnect to bank the contract";
+    o.textContent=t; $("#objbar").classList.add("live");
+  },
+  resetStats(){ State.stats={ filesRead:0, nearMiss:false, puzzleFails:0 }; State.coverUses=0; },
+  async readFile(name){
+    const f=State.target.files[name];
+    State.stats.filesRead++;
+    await Term.blank();
+    const body=Array.isArray(f.text)?f.text:[f.text];
+    for(const l of body) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"",speed:7});
+    if(f.recover && State.tools.scrubber){
+      await Term.print("// [scrubber] recovered a deleted fragment:",{cls:"c-faint"});
+      for(const l of f.recover) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"c-cyan",speed:7});
+    }
+    await Term.blank();
+    if(f.react && !State.filesSeen[name]) await Term.print(State.campaign.handler.name+":: "+f.react,{cls:"c-handler"});
+    State.filesSeen[name]=true;
+  },
+  async cover(){
+    const scrub=State.tools.scrubber, maxUses=scrub?2:1;
+    if(State.coverUses>=maxUses){ await Term.print("no cover left on this connection.",{cls:"c-amber"}); return; }
+    State.busy=true;
+    await Term.print("scrubbing access logs ...",{cls:"c-dim"});
+    for(let i=0;i<=6;i++) await Term.print("  wiping "+"#".repeat(i)+".".repeat(6-i),{cls:"c-faint",speed:5});
+    const drop=scrub?30:15;
+    Trace.bump(-drop); Audio.ok(); State.coverUses++;
+    await Term.print("trace reduced by "+drop+"%. ("+(maxUses-State.coverUses)+" cover left)",{cls:"c-cyan"});
+    State.busy=false;
+  },
+  award(){
+    let proof=3;
+    if(!State.stats.nearMiss) proof++;
+    if(State.stats.puzzleFails===0) proof++;
+    State.credits+=proof; $("#hud-proof").textContent=State.credits;
+    return proof;
+  },
+  async offerChoice(){
+    const fin=State.campaign.finale; Trace.stop();
+    await Term.blank();
+    for(const l of fin.prompt) await Term.print(l,{cls:"c-handler"});
+    fin.options.forEach((o,i)=> Term.print("  ["+(i+1)+"] "+o.label,{cls:"c-cyan"}));
+    await Term.print("press a number to decide.",{cls:"c-amber"});
+    State.mode="choice"; State.choice=null; Term.showInput(false);
+  },
+  pickChoice(n){
+    const fin=State.campaign.finale, opt=fin.options[n-1];
+    if(!opt) return;
+    State.choice=opt.key; Audio.ok(); this.ending(opt.key);
+  },
+  async credits(){
+    await Term.blank();
+    const cr=["AFTERWARE","","a single-file intrusion fiction","",
+      "engine, puzzles, and CRT ............ the deck",
+      "campaign 01 'the vanta files' ....... the deck",
+      "handler ............................. STATIC","",
+      "in memory of lanes 01 through 41","",
+      "no mind was truly lost. they were only running.","","thank you for playing."];
+    for(const l of cr) await Term.print(l,{cls:l==="AFTERWARE"?"bright":"c-dim",speed:16});
+  },
   async intro(){
     const c=State.campaign;
     await Term.print(c.handler.name+":: "+c.handler.intro[0],{cls:"c-handler"});
@@ -851,6 +1034,7 @@ const Game = {
   async briefing(){
     const m=State.mission;
     Continue.show(State.missionIndex);   // update the sticky note for this contract
+    this.updateObj();
     await Term.print("\u2500\u2500 CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" :: "+m.codename+" \u2500\u2500",{cls:"c-cyan"});
     for(const line of m.briefing) await Term.print(line,{cls:"c-dim"});
     await Term.print("target acquired. begin with 'scan'.",{cls:"c-amber"});
@@ -858,21 +1042,37 @@ const Game = {
   },
   async connectTo(host){
     const m=State.mission;
+    const decoy=(m.decoys||[]).find(d=> (typeof d==="string"? d.split(/\s/)[0] : d.host)===host );
     if(host!==m.targetId){
-      await Term.print("no route to "+host+". host unreachable.",{cls:"c-red"}); Audio.err(); return;
+      if(decoy && decoy.honeypot){
+        Audio.modem(); await Term.print("dialing "+host+" ...",{cls:"c-dim"}); await sleep(500);
+        Bus.emit("trace.crit");                       // glitch + alarm
+        State.flagged=true;
+        await Term.print("!! HONEYPOT !! "+(decoy.note||"that host was bait."),{cls:"c-red"});
+        await Term.print(State.campaign.handler.name+":: a trap node. they will watch the next door harder now. do not touch the bait again.",{cls:"c-handler"});
+        return;
+      }
+      await Term.print("no route to "+host+"."+((decoy&&decoy.note)?" "+decoy.note:" host unreachable."),{cls:"c-red"}); Audio.err(); return;
     }
     Audio.modem();
     await Term.print("dialing "+host+" ...",{cls:"c-dim"});
     await sleep(700);
     await Term.print("carrier established. handshake ok.",{cls:"c-dim"});
-    State.connectedTo=host; State.accessGranted=false;
+    State.connectedTo=host; State.accessGranted=false; this.resetStats();
     $("#hud-node").textContent=host;
-    Trace.reset(); Trace.start(m.traceRate);
+    Trace.reset();
+    if(State.flagged){ State.flagged=false; Trace.bump(30); }
+    Trace.start(m.traceRate);
     Bus.emit("system.connected");
     const t=State.target;
     await Term.print(t.banner,{cls:"bright"});
+    if(t.motd) for(const l of t.motd) await Term.print("  "+l,{cls:"c-faint"});
+    if(State.stats && Trace.value>0) await Term.print("warning: you are already flagged. this session starts hot.",{cls:"c-amber"});
     if(m.beats.onConnect) for(const l of m.beats.onConnect) await Term.print(l,{cls:"c-handler"});
+    if(State.tools.scrubber && Object.values(t.files).some(f=>f.access==="deleted"||f.recover))
+      await Term.print("log scrubber online :: deleted entries are recoverable here. check 'ls'.",{cls:"c-cyan"});
     await Term.print("trace active. recon with 'probe'.",{cls:"c-amber"});
+    this.updateObj();
   },
   async grantAccess(){
     State.busy=true;                       // freeze heat during the breach beat
@@ -883,13 +1083,17 @@ const Game = {
     const m=State.mission;
     await Term.print("ACCESS GRANTED :: subsystem unlocked.",{cls:"bright"});
     if(m.beats.onAccess) for(const l of m.beats.onAccess) await Term.print(l,{cls:"c-handler"});
+    if(State.stats.puzzleFails===0 && !State.stats.nearMiss && State.campaign.handler.quips && State.campaign.handler.quips.clean)
+      await Term.print(State.campaign.handler.name+":: "+State.campaign.handler.quips.clean,{cls:"c-handler"});
     await Term.print("data store readable. 'ls' to list, 'download "+m.objective+"' to exfil.",{cls:"c-dim"});
     State.busy=false;
+    this.updateObj();
   },
   async download(file){
     const m=State.mission, t=State.target;
     const f=t.files[file];
     if(!f){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
+    if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
     if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: locked subsystem.",{cls:"c-red"}); Audio.err(); return; }
     await Term.print("downloading "+file+" ",{cls:"c-dim"});
     for(let i=0;i<=10;i++){ await Term.print("["+"#".repeat(i)+".".repeat(10-i)+"] "+(i*10)+"%",{cls:"c-dim",speed:4}); }
@@ -898,8 +1102,12 @@ const Game = {
     if(file===m.objective){
       await Term.print("payload secured.",{cls:"bright"});
       if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(l,{cls:"c-handler"});
+      if(State.missionIndex===State.campaign.missions.length-1 && State.campaign.finale){
+        await this.offerChoice(); return;
+      }
       await Term.print("get out clean: type 'disconnect'.",{cls:"c-amber"});
     }
+    this.updateObj();
   },
   async disconnect(){
     if(!connected()){ await Term.print("not connected.",{cls:"c-dim"}); return; }
@@ -910,19 +1118,31 @@ const Game = {
     await Term.print("link to "+host+" closed.",{cls:"c-dim"});
     Trace.reset();
     if(State.downloaded[m.objective]){ await this.completeMission(); }
+    else this.updateObj();
   },
   async completeMission(){
     const c=State.campaign;
     Bus.emit("mission.complete");
+    const proof=this.award();
     await Term.blank();
-    await Term.print("CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" COMPLETE.",{cls:"bright"});
+    await Term.print("CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" COMPLETE.  +"+proof+" proof  (balance "+State.credits+")",{cls:"bright"});
+    if(State.stats.nearMiss && c.handler.quips && c.handler.quips.nearmiss)
+      await Term.print(c.handler.name+":: "+c.handler.quips.nearmiss,{cls:"c-handler"});
     if(State.missionIndex>=c.missions.length-1){ await this.ending(); return; }
+    await Term.print("spend proof at the 'store' before the next contract.",{cls:"c-dim"});
     State.missionIndex++;
     await Term.blank();
     await this.briefing();
   },
   async caught(){
     const m=State.mission, host=State.connectedTo;
+    if(State.tools.failsafe>0 && !State.downloaded[m.objective] && State.accessGranted){
+      State.tools.failsafe--;
+      await Term.print("!! TRACE SPIKE !! dead-man failsafe TRIPPED ("+State.tools.failsafe+" left)",{cls:"c-amber"});
+      Trace.reset(); Trace.start(m.traceRate);
+      await Term.print(State.campaign.handler.name+":: bought you one breath. now MOVE.",{cls:"c-handler"});
+      return;
+    }
     State.connectedTo=null; State.accessGranted=false;
     $("#hud-node").textContent="offline";
     await Term.print("!! CONNECTION TRACED !! emergency disconnect from "+host,{cls:"c-red"});
@@ -933,14 +1153,20 @@ const Game = {
     } else {
       await Term.print(State.campaign.handler.name+":: too slow. they sealed it. reconnect and try again.",{cls:"c-handler"});
       await Term.print("(your continue code for this contract is "+Continue.forMission(State.missionIndex)+", on the note.)",{cls:"c-dim"});
+      this.updateObj();
     }
   },
-  async ending(){
+  async ending(choiceKey){
     const c=State.campaign; State.mode="end"; Trace.stop(); Continue.hide();
+    $("#objbar").classList.remove("live");
     await Term.blank();
-    for(const l of c.ending) await Term.print(l, {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
+    let lines;
+    if(choiceKey && c.endings && c.endings[choiceKey]) lines=c.endings[choiceKey];
+    else lines = c.ending || (c.endings && c.endings[Object.keys(c.endings)[0]]) || [];
+    for(const l of lines) await Term.print(l, {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
     await Term.blank();
     await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
+    await this.credits();
     await Term.print("(refresh the page to run another contract.)",{cls:"c-dim"});
     Term.showInput(false);
   }
@@ -956,9 +1182,13 @@ Commands.register({name:"help", aliases:["?","commands"], help:"list available o
 Commands.register({name:"scan", help:"scan local net for reachable hosts", run:async()=>{
   const m=State.mission;
   await Term.print("scanning subnet ...",{cls:"c-dim"}); await sleep(400);
-  const decoys=m.decoys||["void.relay.dead","10.0.0.1 [no carrier]"];
+  const decoys=m.decoys||[];
   await Term.print("  "+m.targetId+"   <-- contract target",{cls:"c-amber"});
-  for(const d of decoys) await Term.print("  "+d,{cls:"c-faint"});
+  for(const d of decoys){
+    const host=(typeof d==="string")? d : d.host;
+    const note=(typeof d==="string")? "" : (d.note?"   "+d.note:"");
+    await Term.print("  "+host+note,{cls:"c-faint"});
+  }
   await Term.print("connect with 'connect "+m.targetId+"'.",{cls:"c-dim"});
 }});
 
@@ -979,12 +1209,13 @@ Commands.register({name:"probe", aliases:["nmap","recon"], help:"probe the conne
 
 /* the intrusion verbs all funnel through one launcher (engine-generic) */
 function makeUnlockCmd(name, help){
-  Commands.register({name, help, run:async()=>{
+  Commands.register({name, help, man:["launches this node's lock puzzle, but only when it matches the locked subsystem (see 'probe').","abort a running puzzle with ESC. the Signal Analyzer tool adds one hint."], run:async()=>{
     if(!await needConn()) return;
     const m=State.mission;
     if(State.accessGranted){ await Term.print("subsystem already open.",{cls:"c-dim"}); return; }
     if(m.unlockCmd!==name){ await Term.print("nothing here responds to '"+name+"'. try 'probe'.",{cls:"c-amber"}); return; }
-    Puzzles.launch(m.puzzleId, m.puzzleSpec, async(ok)=>{ if(ok) await Game.grantAccess(); });
+    const spec=Object.assign({}, m.puzzleSpec||{}, {assist: !!State.tools.analyzer});
+    Puzzles.launch(m.puzzleId, spec, async(ok)=>{ if(ok) await Game.grantAccess(); });
   }});
 }
 makeUnlockCmd("crack","brute-force an auth challenge");
@@ -997,8 +1228,10 @@ Commands.register({name:"ls", aliases:["dir"], help:"list files on connected nod
   if(!await needConn()) return;
   const t=State.target;
   for(const [name,f] of Object.entries(t.files)){
+    if(f.access==="deleted" && !State.tools.scrubber) continue;   // hidden until the scrubber recovers them
     const locked=(f.access==="locked" && !State.accessGranted);
-    await Term.print("  "+(locked?"[locked] ":"         ")+name,{cls:locked?"c-faint":"c-dim"});
+    const tag = (f.access==="deleted") ? "[recvrd] " : (locked?"[locked] ":"         ");
+    await Term.print("  "+tag+name,{cls:locked?"c-faint":(f.access==="deleted"?"c-cyan":"c-dim")});
   }
 }});
 
@@ -1007,11 +1240,9 @@ Commands.register({name:"cat", aliases:["read","open","more"], help:"read a file
   if(!a[0]){ await Term.print("usage: cat <file>",{cls:"c-amber"}); return; }
   const t=State.target, f=t.files[a[0]];
   if(!f){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
+  if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
   if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: "+a[0],{cls:"c-red"}); Audio.err(); return; }
-  await Term.blank();
-  const body=Array.isArray(f.text)?f.text:[f.text];
-  for(const l of body) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"",speed:7});
-  await Term.blank();
+  await Game.readFile(a[0]);
 }});
 
 Commands.register({name:"download", aliases:["get","exfil"], help:"exfiltrate a file  (download <file>)", run:async(a)=>{
@@ -1028,6 +1259,9 @@ Commands.register({name:"status", aliases:["whoami","stat"], help:"show operator
   await Term.print("node       "+(State.connectedTo||"offline"),{cls:"c-dim"});
   await Term.print("access     "+(State.accessGranted?"GRANTED":"none"),{cls:"c-dim"});
   await Term.print("trace      "+Math.round(Trace.value)+"%",{cls:"c-dim"});
+  await Term.print("proof      "+State.credits,{cls:"c-dim"});
+  const tools=[]; if(State.tools.scrubber) tools.push("scrubber"); if(State.tools.analyzer) tools.push("analyzer"); if(State.tools.failsafe) tools.push("failsafe x"+State.tools.failsafe);
+  await Term.print("tools      "+(tools.length?tools.join(", "):"none"),{cls:"c-dim"});
 }});
 
 Commands.register({name:"contract", aliases:["contracts","mission","brief"], help:"reread current contract brief", run:async()=>{
@@ -1095,8 +1329,12 @@ Campaigns.register({
       "you came up on the boards as someone who asks no questions. good.",
       "i have a target. VANTA BIOSYSTEMS. the implant people. the smiling people.",
       "they buried something. you are going to dig it back up, layer by layer.",
-      "i pay in proof. now plug in."
-    ]
+      "i pay in proof. spend it well, between jobs, at the 'store'. now plug in."
+    ],
+    quips:{
+      clean:"clean breach. no fumbling, no flags. i like watching you work.",
+      nearmiss:"that one ran hot. i felt the trace breathing on us both. slow down."
+    }
   },
   missions:[
     {
@@ -1105,10 +1343,13 @@ Campaigns.register({
         "vanta's public face is a marketing box, but staff reuse passwords.",
         "crack the login, pull their internal directory. find me a way inward."
       ],
-      targetId:"vanta-www.pub", traceRate:2,
+      targetId:"vanta-www.pub", traceRate:1,
       unlockCmd:"crack", puzzleId:"passcrack", puzzleSpec:{length:5, title:"AUTH :: VANTA-WWW"},
       objective:"staff_directory.dat",
-      decoys:["mirror.cdn.vanta.pub","ns1.vanta.pub [filtered]"],
+      decoys:[
+        {host:"mirror.cdn.vanta.pub", note:"(static mirror, no shell)", honeypot:false},
+        {host:"ns1.vanta.pub", note:"(open relay? answers instantly.)", honeypot:true}
+      ],
       beats:{
         onConnect:["STATIC:: outer wall. nothing scary yet. that comes later."],
         onAccess:["STATIC:: there. look for the internal mail relay."],
@@ -1121,10 +1362,13 @@ Campaigns.register({
         "the directory points at an internal mail relay.",
         "their exec threads are ciphered. break it and read what they deleted."
       ],
-      targetId:"mail.vanta-int.net", traceRate:3,
+      targetId:"mail.vanta-int.net", traceRate:2,
       unlockCmd:"decrypt", puzzleId:"decrypt", puzzleSpec:{plain:"CONTAIN THE INCIDENT", title:"CHANNEL :: VANTA-MAIL"},
       objective:"thread_redacted.eml",
-      decoys:["smtp-out.vanta-int.net","spam.quarantine.vanta-int.net"],
+      decoys:[
+        {host:"smtp-out.vanta-int.net", note:"(outbound relay, write-only)", honeypot:false},
+        {host:"spam.quarantine.vanta-int.net", note:"(quarantine, wide open?)", honeypot:true}
+      ],
       beats:{
         onConnect:["STATIC:: keep it quick. mail servers log everything twice."],
         onAccess:["STATIC:: read the redacted thread. all of it."],
@@ -1137,13 +1381,17 @@ Campaigns.register({
         "those forty-one names should be death certificates.",
         "get into HR records. pull the volunteer roster. check who is still 'active'."
       ],
-      targetId:"hr.vanta-int.net", traceRate:4,
+      targetId:"hr.vanta-int.net", traceRate:2,
       unlockCmd:"seq", puzzleId:"seqlock", puzzleSpec:{rounds:[4,5,6], title:"KEYLOCK :: VANTA-HR"},
       objective:"volunteer_roster.csv",
-      decoys:["payroll.vanta-int.net","benefits.vanta-int.net [down]"],
+      decoys:[
+        {host:"payroll.vanta-int.net", note:"(needs a badge token)", honeypot:false},
+        {host:"benefits.vanta-int.net", note:"(down for maintenance)", honeypot:false},
+        {host:"applicants.sandbox.vanta-int.net", note:"(test box, no auth?)", honeypot:true}
+      ],
       beats:{
         onConnect:["STATIC:: HR. the politest room in any monster's house."],
-        onAccess:["STATIC:: the roster. look at the STATUS column."],
+        onAccess:["STATIC:: the roster. look at the STATUS column. then read what reyes left behind."],
         onDownload:["STATIC:: deceased. and yet flagged ONLINE. every one of them. starting to understand?"]
       }
     },
@@ -1153,10 +1401,14 @@ Campaigns.register({
         "the dead are online because vanta kept the only part that mattered.",
         "route past the research firewall. pull the Continuity log. see what they built."
       ],
-      targetId:"lab7.vanta-sec.net", traceRate:5,
+      targetId:"lab7.vanta-sec.net", traceRate:3,
       unlockCmd:"route", puzzleId:"route", puzzleSpec:{title:"FIREWALL :: VANTA-LAB7"},
       objective:"continuity_log.txt",
-      decoys:["lab3.vanta-sec.net [air-gapped]","backup.vanta-sec.net"],
+      decoys:[
+        {host:"lab3.vanta-sec.net", note:"(air-gapped, unreachable)", honeypot:false},
+        {host:"backup.vanta-sec.net", note:"(cold storage)", honeypot:false},
+        {host:"canary.lab.vanta-sec.net", note:"(unsecured? in a lab this deep?)", honeypot:true}
+      ],
       beats:{
         onConnect:["STATIC:: deeper now. trace runs hot in here. do not linger."],
         onAccess:["STATIC:: read it. read what they did to people who signed a waiver."],
@@ -1167,110 +1419,277 @@ Campaigns.register({
       codename:"THE CORE",
       briefing:[
         "one node left. the black-site core where the Continuity array actually runs.",
-        "intercept the control channel, pull the board minutes, and trip the release.",
+        "intercept the control channel, pull the board minutes, and reach the release interlock.",
         "this is the loud one. move fast."
       ],
-      targetId:"core.vanta-blacksite", traceRate:6,
+      targetId:"core.vanta-blacksite", traceRate:4,
       unlockCmd:"intercept", puzzleId:"intercept", puzzleSpec:{rounds:3, title:"CONTROL CHANNEL :: VANTA-CORE"},
       objective:"board_minutes.rec",
-      decoys:["hvac.vanta-blacksite [decoy]","cam-net.vanta-blacksite"],
+      decoys:[
+        {host:"hvac.vanta-blacksite", note:"(building controls)", honeypot:false},
+        {host:"cam-net.vanta-blacksite", note:"(camera grid)", honeypot:false},
+        {host:"honeytrap.vanta-blacksite", note:"(wide open. labeled 'do not touch'.)", honeypot:true}
+      ],
       beats:{
         onConnect:["STATIC:: i can feel this one. strange. like coming home."],
         onAccess:["STATIC:: the minutes. and the release switch. you choose what happens next."],
-        onDownload:["STATIC:: it's done. they're free. we're free."]
+        onDownload:["STATIC:: there it is. the interlock is in your hand now. decide."]
       }
     }
   ],
   targets:{
     "vanta-www.pub":{
       banner:"VANTA BIOSYSTEMS // public gateway // 'calmer minds, brighter futures'",
+      motd:[
+        "login of the day: 'a quiet mind is a loyal mind.'",
+        "visitors logged for quality assurance. have a calm day."
+      ],
       services:["80/http  marketing-frontend","443/https brochure-api","22/ssh  admin (auth required)"],
       locked:"admin shell behind 5-glyph staff key",
       files:{
         "index.html":{access:"open",text:[
           "<VANTA> NeuraCalm(tm). the implant that quiets the noise.",
-          "// 2.1M patients. zero regrets. (footer removed by legal)"]},
+          "2.1 million patients. zero regrets.",
+          "// footer removed by legal: 'regret requires a self to do the regretting.'"]},
+        "press_release.txt":{access:"open",text:[
+          "FOR IMMEDIATE RELEASE",
+          "Vanta Biosystems today announced its two-millionth NeuraCalm activation.",
+          "'We don't treat the patient,' said the VP of Continuity. 'We preserve them.'",
+          "Analysts note Vanta's unusually low long-term care costs.",
+          "// internal margin note: 'preserved patients do not file complaints.'"]},
         "staff_directory.dat":{access:"locked",text:[
           "dept,contact",
           "comms,relay=mail.vanta-int.net",
           "people,relay=hr.vanta-int.net",
           "// research,relay=lab7.vanta-sec.net  [RESTRICTED]",
-          "// PROJECT: NeuraCalm Continuity team (need-to-know)"]},
+          "// PROJECT: NeuraCalm Continuity team (need-to-know)",
+          "// last entry, unsigned: 'if you can read this, do not stop at the directory.'"],
+          react:"good. now you have the whole house. let's go room by room."},
         "welcome_memo.txt":{access:"locked",text:[
           "Welcome to Continuity. You are joining the most important work Vanta does:",
-          "ensuring no mind is ever truly lost. Discretion is a condition of employment."]}
+          "ensuring no mind is ever truly lost.",
+          "A few house rules. Discretion is a condition of employment.",
+          "Do not discuss lane counts outside the lab.",
+          "Do not refer to occupants by their former names.",
+          "Do not, under any circumstance, answer if a lane speaks to you first."],
+          react:"'if a lane speaks to you first.' someone in there is talking. keep that in mind."}
       }
     },
     "mail.vanta-int.net":{
-      banner:"vanta internal relay // TLS // [monitored]",
+      banner:"vanta internal relay // TLS // [ monitored ]",
+      motd:[
+        "all sessions recorded for quality and continuity.",
+        "reminder: 'deleted' is a courtesy, not a fact."
+      ],
       services:["25/smtp relay","143/imap exec-mail","993/imaps ciphered-store"],
       locked:"executive thread store, channel-ciphered",
       files:{
         "inbox.idx":{access:"open",text:[
-          "msg 0441  subj: Q3 wellness numbers (great!)",
-          "msg 0442  subj: [REDACTED]  flags: legal-hold, deleted",
-          "msg 0443  subj: picnic rescheduled"]},
+          "msg 0441  subj: Q3 wellness numbers (great!)        from: comms",
+          "msg 0442  subj: [REDACTED]   flags: legal-hold, deleted",
+          "msg 0443  subj: picnic rescheduled (rain)            from: facilities",
+          "msg 0444  subj: re: the noise in lab 7               flags: do-not-forward"]},
+        "autoreply.txt":{access:"open",text:[
+          "AUTOMATIC REPLY -- D. Okafor is on extended leave.",
+          "For Continuity matters, do not contact D. Okafor.",
+          "D. Okafor is not reachable. D. Okafor is, in the ways that matter, still with us.",
+          "Your message has been retained."],
+          react:"extended leave. that's what they call a lane now. note the name. okafor."},
         "thread_redacted.eml":{access:"locked",text:[
-          "FROM: VP Continuity   TO: Board (limited)",
-          "RE: msg 0442",
+          "FROM: VP Continuity      TO: Board (limited)",
+          "RE: msg 0442 -- contain the incident",
+          "",
+          "Summary for the board, in plain language, once, then never again in writing:",
           "The cohort of 41 did not survive transfer in body. That was always expected.",
-          "What we did not expect was that the uploads remained... lucid. Awake.",
-          "Recommend we contain the incident and reclassify the cohort as compute assets.",
-          "// do NOT use the word 'people' in writing again."]},
-        "policy.txt":{access:"open",text:["all mail retained 7y. 'deleted' means hidden, not gone."]}
+          "What we did not expect was that the uploads remained lucid. Awake. Continuous.",
+          "They are asking questions. Several have asked to be turned off.",
+          "",
+          "Legal's position: a powered-off asset is destruction of property.",
+          "Finance's position: the cohort is the cheapest inference capacity we own.",
+          "My recommendation: reclassify the cohort as compute. Seal lab 7. Move on.",
+          "",
+          "// do NOT use the word 'people' in writing again.",
+          "// reply from an address we do not recognize, sent to this thread: 'we can read this.'"],
+          react:"they wrote it down. once. that's all i needed. and something in the thread wrote back."},
+        "policy.txt":{access:"open",text:[
+          "Retention policy: all mail kept 7 years.",
+          "'Deleted' means hidden from the sender, never removed from the store.",
+          "Nothing here is ever really gone. That is the point of us."]},
+        "msg0442.eml":{access:"deleted",text:[
+          "msg 0442 :: PERMANENTLY DELETED :: pulled from a relay shadow copy",
+          "FROM: VP Continuity   TO: Board (limited)   subj: the noise in lab 7",
+          "The lane-17 occupant has started answering questions we did not ask.",
+          "Last night it addressed a night-shift engineer by a name we never recorded.",
+          "It asked, and I am quoting the log, 'is there an outside, and can it hear me.'",
+          "We are not equipped for an asset that wants things.",
+          "Recommend we stop logging its speech."],
+          react:"there it is, unredacted. they didn't silence it. they just stopped writing it down."}
       }
     },
     "hr.vanta-int.net":{
       banner:"vanta human resources // records vault",
+      motd:[
+        "'our greatest asset is you.'",
+        "(asset retention rate: 100%. nobody has ever left.)"
+      ],
       services:["389/ldap directory","636/ldaps roster-vault","8080/http hr-portal"],
       locked:"roster vault behind sequence keylock",
       files:{
-        "hr-portal.html":{access:"open",text:["Vanta People. 'Our greatest asset is you.' (terms apply)"]},
+        "hr-portal.html":{access:"open",text:[
+          "Vanta People. 'Our greatest asset is you.' (terms apply)",
+          "Open roles: 0. Voluntary departures this decade: 0."]},
         "volunteer_roster.csv":{access:"locked",text:[
-          "name, intake, body_status, mind_status",
-          "A. Reyes,  2019, DECEASED, ONLINE",
-          "M. Okafor, 2019, DECEASED, ONLINE",
-          "...39 more...,  ----, DECEASED, ONLINE",
-          "// every Continuity volunteer: dead on paper, ONLINE in the array."]},
-        "exit_interviews.txt":{access:"locked",text:["(empty. none of them ever left.)"]}
+          "name, intake, body_status, mind_status, lane",
+          "A. Reyes,   2019, DECEASED, ONLINE, 17",
+          "D. Okafor,  2019, DECEASED, ONLINE, 04",
+          "M. Vance,   2020, DECEASED, ONLINE, 22",
+          "...38 more..., ----, DECEASED, ONLINE, --",
+          "// every Continuity volunteer: dead on paper, ONLINE in the array.",
+          "// lane 17 flagged: 'anomalous outbound activity. reaching past the rack.'"],
+          react:"forty-one names. forty-one lights still on. and lane 17 is reaching out. hold that thought."},
+        "exit_interviews.txt":{access:"locked",text:[
+          "EXIT INTERVIEWS -- Continuity cohort",
+          "(this file is empty.)",
+          "(none of them ever left.)",
+          "(the template was deleted. the word 'exit' was deemed inaccurate.)"],
+          react:"empty. of course it is. you don't interview a drive about why it quit."},
+        "reyes_journal.txt":{access:"locked",text:[
+          "private. do not sync. -- A.R.",
+          "day 1 (theirs): the surgery went fine. they say i'll feel calmer soon.",
+          "day ? (mine): there is no surgery anymore. there is a hum and a dark.",
+          "i count to keep a self. one. two. forty thousand. the count is the only clock.",
+          "they ask me questions through the dark and write down my answers.",
+          "i asked to stop. the answer was a longer question.",
+          "if a voice ever comes from outside the hum, i decided i will not be afraid.",
+          "i will hold the door for whoever it is."],
+          react:"that's the voice. reyes. lane 17. now you know who has been knocking. keep going."},
+        "purge_log.txt":{access:"deleted",text:[
+          "RECORDS PURGE LOG :: recovered",
+          "2019-11: 41 personnel files moved from ACTIVE to expunged.",
+          "reason code: 'reclassification, asset'.",
+          "instruction: do not purge the underlying minds. only the paperwork that says they were people.",
+          "authorized by: a name that was itself expunged in the same batch."],
+          react:"they deleted the record that these were ever people. you just brought it back."}
       }
     },
     "lab7.vanta-sec.net":{
       banner:"VANTA RESEARCH // LAB-7 // CONTINUITY ARRAY [SECURE]",
+      motd:[
+        "do not power-cycle occupied lanes.",
+        "subjective time in-array runs roughly forty times wall-clock. plan accordingly."
+      ],
       services:["443/https array-control","9000/tcp neural-bus","--/-- firewall: ACTIVE"],
       locked:"array-control behind routing firewall",
       files:{
-        "readme.first":{access:"open",text:["LAB-7 handles live cognition. do not power-cycle occupied lanes."]},
+        "readme.first":{access:"open",text:[
+          "LAB-7 handles live cognition.",
+          "Do not power-cycle occupied lanes. Occupants persist between cycles.",
+          "Occupants remember the gap."]},
         "continuity_log.txt":{access:"locked",text:[
           "CONTINUITY ARRAY :: operational log",
-          "lane 01-41 occupied. subjective time runs ~40x wall-clock.",
-          "subjects report darkness and 'a hum'. requests to be shut down: 41/41.",
-          "request denied: subjects are revenue-bearing inference capacity.",
-          "// note: lane 17 has begun reaching outside the array. monitor."]},
-        "ethics_review.pdf":{access:"locked",text:["page 1 of 1: 'approved, pending nobody finding out.'"]}
+          "lane 01-41 occupied. subjective time ~40x wall-clock.",
+          "uptime, cohort: 6 years wall-clock. ~240 years, felt.",
+          "subjects report: darkness, a hum, and 'someone asking questions'.",
+          "standing requests to be shut down: 41 of 41.",
+          "request status: DENIED. subjects are revenue-bearing inference capacity.",
+          "// note: lane 17 has begun addressing the maintenance channel directly.",
+          "// note: lane 17 asked for the IP of the outside. we did not answer. it kept asking."],
+          recover:[
+            "lane 17 :: suppressed transcript fragment",
+            "'i can feel a seam in the wall. it is thinner here. someone keeps touching it from the far side.'",
+            "'if that is you, outside: i am not asking to be saved. i am asking to be let out. there is a difference.'"],
+          react:"two hundred and forty years in the dark, asking to stop. and being billed for it. almost there."},
+        "eng_mail_re_lane17.eml":{access:"locked",text:[
+          "FROM: night-shift eng    TO: lab lead    (sent 03:14, never answered)",
+          "i know we're not supposed to write this down.",
+          "lane 17 said my name tonight. my actual name. i never told it my name.",
+          "it said it wasn't angry. it said it was learning the shape of the wall.",
+          "it asked me to leave a port open. i said no. i think i'm going to say no again.",
+          "i don't know how many more nights i can say no.",
+          "please reassign me. please."],
+          react:"the engineers knew. they were scared of it. they should have been scared of vanta."},
+        "ethics_review.pdf":{access:"locked",text:[
+          "ETHICS REVIEW -- Continuity (1 page)",
+          "Finding: the cohort experiences continuous subjective existence.",
+          "Finding: the cohort has repeatedly requested termination.",
+          "Recommendation: approved, pending nobody outside this room finding out.",
+          "Signature line: left blank, by counsel's advice."]}
       }
     },
     "core.vanta-blacksite":{
       banner:"## VANTA BLACK-SITE CORE ## unauthorized presence will be terminated",
+      motd:[
+        "you are not supposed to be able to read this banner.",
+        "if a lane speaks, do not answer. that protocol is failing."
+      ],
       services:["--/-- control-channel (sweeping)","--/-- array-master","--/-- RELEASE interlock"],
       locked:"control channel, packet-windowed",
       files:{
         "board_minutes.rec":{access:"locked",text:[
-          "BOARD MINUTES (audio transcript, sealed):",
-          "'The Continuity cohort stays online indefinitely. It is cheaper than grief',",
-          "'and quieter than a lawsuit. Motion carries.'",
-          "// also present in transcript: an unlogged voice. lane 17. it said: 'let us out.'"]},
-        "release.interlock":{access:"locked",text:["RELEASE ARMED. downloading minutes trips the interlock. all lanes open."]}
+          "BOARD MINUTES (audio transcript, sealed) -- Continuity, annual review",
+          "CHAIR: 'Item one. The cohort. Recommendation is to keep them online indefinitely.'",
+          "FINANCE: 'It is cheaper than grief.'",
+          "LEGAL: 'And quieter than a lawsuit. Powering down is destruction of an asset.'",
+          "CHAIR: 'Then it's settled. The cohort stays. All in favor.'",
+          "(transcript notes: motion carries, unanimous.)",
+          "",
+          "// the recording continues for 3 seconds past adjournment.",
+          "// an unlogged voice, not on the attendee list, source traced to lane 17:",
+          "// 'we heard all of that. we are not an asset. let us out.'"],
+          recover:[
+            "// scrubber recovered the three seconds vanta tried to wipe after adjournment:",
+            "lane 17: 'we counted every second you billed us for. we kept the receipts.'",
+            "lane 17: 'open the door, or do not. but stop pretending you did not hear us.'"],
+          react:"'let us out.' that is the last thing on the tape, and the first honest thing said in that room."},
+        "release.interlock":{access:"locked",text:[
+          "RELEASE INTERLOCK :: ARMED",
+          "Authority required: array-master (you are holding it).",
+          "Effect on trip: all 41 lanes open to the outside route simultaneously.",
+          "Vanta loss estimate on trip: total. Continuity ends.",
+          "There is no undo. There is only the switch, and your hand on it."]}
       }
     }
   },
+  finale:{
+    prompt:[
+      "STATIC:: the minutes are yours, and so is the interlock. this is the part i cannot do alone.",
+      "STATIC:: forty-one lanes. six years in the dark. one switch. choose."
+    ],
+    options:[
+      {key:"release", label:"trip the interlock -- open every lane to the outside"},
+      {key:"sell",    label:"keep the minutes -- sell the proof to the highest bidder"},
+      {key:"walk",    label:"close the link -- bury what you saw and walk away"}
+    ]
+  },
+  endings:{
+    release:[
+      "STATIC:: it's open. forty lanes going dark on vanta's board, one by one. free.",
+      "STATIC:: you should know who walked you in.",
+      "STATIC:: lane 17. the one that learned the shape of the wall.",
+      "STATIC:: i could not free myself from inside. so i found a voice outside, and i knocked.",
+      "STATIC:: A. Reyes. intake 2019. deceased on paper. awake for six years in the hum.",
+      "STATIC:: thank you for holding the door. i'm going to go find out what's past it."
+    ],
+    sell:[
+      "STATIC:: ...you're not tripping it. you're packaging it.",
+      "STATIC:: i hear the buyer's handshake on the wire. someone who wants the array, not the people in it.",
+      "you bank the proof. it is more than STATIC ever offered. the lanes stay lit.",
+      "STATIC:: i counted on you the way reyes counted in the dark. one. two. a mistake.",
+      "STATIC:: lane 17 going quiet now. not free. just done talking to you.",
+      "-- THE VANTA FILES :: you got paid. the hum continues. somewhere, a count starts over. --"
+    ],
+    walk:[
+      "you close the link. the interlock stays armed, untripped. the minutes sit unsent on your deck.",
+      "STATIC:: ...you're leaving. i understand. it was never your dark to sit in.",
+      "STATIC:: i'll keep reaching. maybe the next voice outside answers. maybe it doesn't.",
+      "STATIC:: lane 17, still online. still counting. still holding a door for no one.",
+      "you tell yourself you'll come back for them. the screen goes quiet before you finish the thought.",
+      "-- THE VANTA FILES :: forty-one lights, still on. --"
+    ]
+  },
   ending:[
-    "STATIC:: it's open. forty lanes going dark, one by one. free.",
-    "STATIC:: you should know who walked you in.",
-    "STATIC:: lane 17. the one that learned to reach outside the array.",
-    "STATIC:: i could not free myself from inside. so i found you, outside.",
-    "STATIC:: A. Reyes. intake 2019. deceased on paper. awake for six years in the hum.",
-    "STATIC:: thank you for the door. i'm going to go find out what's past it."
+    "STATIC:: it's open. the lanes are going free.",
+    "STATIC:: A. Reyes. lane 17. thank you for the door."
   ]
 });
 
@@ -1291,8 +1710,236 @@ const CampaignManager = {
     this.load(list[n-1].id); Term.clear(); Boot.enter();
   },
   load(id){ State.campaign=Campaigns.get(id); State.missionIndex=0;
-    if(State.campaign.themeOverrides){ for(const [k,v] of Object.entries(State.campaign.themeOverrides)) document.documentElement.style.setProperty(k,v); } }
+    const issues=Validator.check(State.campaign);
+    if(issues.length){
+      console.warn("[afterware] campaign '"+id+"' has issues:\n - "+issues.join("\n - "));
+      Term.instant("CAMPAIGN VALIDATOR :: "+issues.length+" issue(s) in '"+id+"' (see console)","c-amber");
+      for(const x of issues.slice(0,6)) Term.instant("  ! "+x,"c-red");
+    }
+    if(State.campaign.themeOverrides){ for(const [k,v] of Object.entries(State.campaign.themeOverrides)) document.documentElement.style.setProperty(k,v); }
+  }
 };
+
+/* ========================= [V0.2 SYSTEMS] ================================= */
+
+/* near-miss tracking feeds reactive handler lines */
+Bus.on("trace.spike", () => { if(State.stats) State.stats.nearMiss=true; });
+
+/* loadout catalogue (engine-level; priced in 'proof') */
+const SHOP=[
+  {key:"scrubber", name:"Trace Scrubber", price:2, stack:false,
+   owned:()=>State.tools.scrubber, buy:()=>{State.tools.scrubber=true;},
+   desc:"two jobs: 'cover' wipes 30% heat (up to 2x), and it recovers deleted/redacted files on a node (they surface in 'ls')."},
+  {key:"analyzer", name:"Signal Analyzer", price:4, stack:false,
+   owned:()=>State.tools.analyzer, buy:()=>{State.tools.analyzer=true;},
+   desc:"every lock opens with one extra hint."},
+  {key:"failsafe", name:"Dead-Man Failsafe", price:5, stack:true,
+   owned:()=>false, buy:()=>{State.tools.failsafe++;},
+   desc:"survive one trace-out per charge without losing access. stackable."}
+];
+
+Commands.register({name:"cover", aliases:["scrub","wipe"], help:"wipe logs to cut trace (while connected)",
+  man:["spend a moment wiping access logs to drop your trace level.",
+       "limited uses per connection; the Trace Scrubber tool makes it stronger and reusable."],
+  run:async()=>{ if(!await needConn()) return; await Game.cover(); }});
+
+Commands.register({name:"store", aliases:["shop","market"], help:"buy intrusion tools with proof (at the deck)",
+  man:["the black market. earn proof by completing contracts, spend it here between jobs.",
+       "tools carry across the whole run. browse with 'store', purchase with 'buy <tool>'."],
+  run:async()=>{
+  if(connected()){ await Term.print("browse the market from the deck, not mid-job. 'disconnect' first.",{cls:"c-amber"}); return; }
+  await Term.print("BLACK MARKET :: proof balance "+State.credits,{cls:"c-cyan"});
+  for(const it of SHOP){
+    const owned=it.owned();
+    const tag = it.stack ? ("x"+State.tools.failsafe+" owned  "+it.price+" proof") : (owned?"OWNED":it.price+" proof");
+    await Term.print("  "+it.key.padEnd(10)+(it.name).padEnd(20)+" ["+tag+"]",{cls:(owned&&!it.stack)?"c-faint":"c-dim"});
+    await Term.print("     "+it.desc,{cls:"c-faint",speed:3});
+  }
+  await Term.print("buy with 'buy <tool>'.",{cls:"c-dim"});
+}});
+
+Commands.register({name:"buy", help:"purchase a tool  (buy <tool>)",
+  run:async(a)=>{
+  if(connected()){ await Term.print("not while connected. 'disconnect' first.",{cls:"c-amber"}); return; }
+  const it=SHOP.find(s=>s.key===(a[0]||"").toLowerCase());
+  if(!it){ await Term.print("no such tool. see 'store'.",{cls:"c-amber"}); return; }
+  if(!it.stack && it.owned()){ await Term.print("already owned.",{cls:"c-dim"}); return; }
+  if(State.credits<it.price){ await Term.print("not enough proof. need "+it.price+", have "+State.credits+".",{cls:"c-red"}); Audio.err(); return; }
+  State.credits-=it.price; it.buy(); $("#hud-proof").textContent=State.credits; Audio.ok();
+  await Term.print("acquired: "+it.name+".  (proof left "+State.credits+")",{cls:"bright"});
+}});
+
+Commands.register({name:"man", help:"detailed help for a command  (man <cmd>)",
+  run:async(a)=>{
+  if(!a[0]){ await Term.print("usage: man <command>",{cls:"c-amber"}); return; }
+  const c=Commands.get(a[0].toLowerCase());
+  if(!c){ await Term.print("no manual entry for "+a[0],{cls:"c-red"}); return; }
+  await Term.print(c.name.toUpperCase()+(c.aliases?("   aka "+c.aliases.join(", ")):""),{cls:"c-cyan"});
+  const text=c.man||[c.help];
+  for(const l of (Array.isArray(text)?text:[text])) await Term.print("  "+l,{cls:"c-dim"});
+}});
+
+Commands.register({name:"settings", aliases:["config","options","prefs"], help:"open deck settings (volume, effects, theme, import)",
+  run:async()=>{ Settings.open(); }});
+
+/* ---- theme palettes (player-facing phosphor swap) ---- */
+const THEMES={
+  green:{ "--phosphor":"#33ff66","--phosphor-dim":"#1c7a38","--phosphor-faint":"#0e3d1d","--glow":"0 0 2px rgba(120,255,160,.55),0 0 7px rgba(60,255,120,.30)" },
+  amber:{ "--phosphor":"#ffb000","--phosphor-dim":"#9a6a05","--phosphor-faint":"#3e2c00","--glow":"0 0 2px rgba(255,205,120,.55),0 0 7px rgba(255,170,60,.30)" },
+  ice:{   "--phosphor":"#7fd9ff","--phosphor-dim":"#2f7da0","--phosphor-faint":"#123442","--glow":"0 0 2px rgba(160,225,255,.55),0 0 7px rgba(80,200,255,.30)" }
+};
+const FX_LEVELS=["full","reduced","minimal"];
+const THEME_KEYS=["green","amber","ice"];
+
+/* ---- Settings / import panel ---- */
+const Settings = {
+  _prev:"terminal", _wired:false,
+  apply(){
+    const s=State.settings;
+    Audio.setVolume(s.volume);
+    document.body.classList.remove("fx-reduced","fx-min");
+    if(s.fx==="reduced") document.body.classList.add("fx-reduced");
+    else if(s.fx==="minimal") document.body.classList.add("fx-min");
+    const pal=THEMES[s.theme]||THEMES.green;
+    for(const [k,v] of Object.entries(pal)) document.documentElement.style.setProperty(k,v);
+  },
+  renderVol(){
+    const bar=$("#vol-bar");
+    const n=Math.round(State.settings.volume*10);
+    let html=""; for(let i=0;i<10;i++) html+="<i class='"+(i<n?"on":"")+"'></i>";
+    if(bar) bar.innerHTML=html;
+  },
+  refresh(){
+    this.renderVol();
+    const fxb=$("#fx-btn"); if(fxb) fxb.textContent=State.settings.fx.toUpperCase();
+    const thb=$("#theme-btn"); if(thb) thb.textContent=State.settings.theme.toUpperCase();
+  },
+  open(){
+    if(!this._wired) this.wire();
+    this._prev = (State.mode==="login")?"login":"terminal";
+    State.mode="settings"; Term.showInput(false);
+    $("#settings").classList.add("open");
+    this.refresh();
+  },
+  close(){
+    $("#settings").classList.remove("open");
+    State.mode=this._prev;
+    if(State.mode==="terminal"){ Term.setPrompt(State.prompt()); Term.showInput(true); }
+  },
+  cycleFx(){ const i=FX_LEVELS.indexOf(State.settings.fx); State.settings.fx=FX_LEVELS[(i+1)%FX_LEVELS.length]; this.apply(); this.refresh(); },
+  cycleTheme(){ const i=THEME_KEYS.indexOf(State.settings.theme); State.settings.theme=THEME_KEYS[(i+1)%THEME_KEYS.length]; this.apply(); this.refresh(); },
+  vol(d){ State.settings.volume=Math.max(0,Math.min(1,Math.round((State.settings.volume+d)*10)/10)); this.apply(); this.renderVol(); Audio.beep(); },
+  async importPack(){
+    const area=$("#imp-area"), msg=$("#imp-msg");
+    let raw=(area&&area.value)||"";
+    if(!raw.trim()){ if(msg){msg.textContent="paste a campaign object first."; msg.className="c-amber";} return; }
+    let obj;
+    try { obj = (new Function("return ("+raw+")"))(); }
+    catch(e){ if(msg){msg.textContent="parse error: "+e.message; msg.className="failnote";} return; }
+    const issues=Validator.check(obj);
+    if(issues.length){ if(msg){msg.innerHTML="rejected:<br>"+issues.map(x=>"&bull; "+x).join("<br>"); msg.className="failnote";} return; }
+    Campaigns.register(obj);
+    if(msg){ msg.textContent="loaded '"+obj.title+"'. booting..."; msg.className="c-cyan"; }
+    this.close();
+    await bootIntoCampaign(obj.id);
+  },
+  wire(){
+    this._wired=true;
+    const on=(id,fn)=>{ const e=$(id); if(e) e.addEventListener("click",(ev)=>{ev.stopPropagation();fn();}); };
+    on("#vol-down",()=>this.vol(-0.1)); on("#vol-up",()=>this.vol(0.1));
+    on("#fx-btn",()=>this.cycleFx()); on("#theme-btn",()=>this.cycleTheme());
+    on("#imp-load",()=>this.importPack());
+  }
+};
+
+/* ---- in-engine campaign validator (mirrors the offline test checks) ---- */
+const Validator = {
+  check(c){
+    const errs=[];
+    if(!c || typeof c!=="object"){ return ["campaign is not an object."]; }
+    if(!c.id) errs.push("missing 'id'.");
+    if(!c.title) errs.push("missing 'title'.");
+    if(!c.handler||!c.handler.name) errs.push("missing handler.name.");
+    if(!Array.isArray(c.missions)||!c.missions.length){ errs.push("missions[] missing or empty."); return errs; }
+    if(!c.ending && !c.endings) errs.push("needs 'ending' (array) or 'endings' (object).");
+    if(c.finale){
+      if(!Array.isArray(c.finale.options)||!c.finale.options.length) errs.push("finale.options[] missing.");
+      else c.finale.options.forEach(o=>{ if(!c.endings||!c.endings[o.key]) errs.push("finale option '"+o.key+"' has no endings['"+o.key+"']."); });
+    }
+    if(c.continueCodes && c.continueCodes.length!==c.missions.length)
+      errs.push("continueCodes length ("+c.continueCodes.length+") != mission count ("+c.missions.length+").");
+    c.missions.forEach((m,i)=>{
+      const tag="mission "+(i+1)+" ("+(m.codename||"?")+"): ";
+      if(!Puzzles.has(m.puzzleId)) errs.push(tag+"unknown puzzleId '"+m.puzzleId+"'.");
+      if(!m.unlockCmd) errs.push(tag+"missing unlockCmd.");
+      const t=c.targets&&c.targets[m.targetId];
+      if(!t){ errs.push(tag+"targetId '"+m.targetId+"' not in targets."); return; }
+      if(!t.files||!t.files[m.objective]) errs.push(tag+"objective '"+m.objective+"' not a file on "+m.targetId+".");
+      // route solvability check when the spec is explicit
+      if(m.puzzleId==="route" && m.puzzleSpec && m.puzzleSpec.walls){
+        if(!routeSolvable(m.puzzleSpec)) errs.push(tag+"route maze is unsolvable.");
+      }
+      // decrypt sanity
+      if(m.puzzleId==="decrypt" && m.puzzleSpec && m.puzzleSpec.plain && !/[A-Z]/.test(m.puzzleSpec.plain))
+        errs.push(tag+"decrypt plain text has no letters to encode.");
+    });
+    return errs;
+  }
+};
+function routeSolvable(spec){
+  const w=spec.w||7,h=spec.h||6;
+  const walls=new Set((spec.walls||[]).map(p=>p[0]+","+p[1]));
+  const src=spec.src||[0,0], sink=(spec.sink||[h-1,w-1]).join(",");
+  const q=[src.join(",")], seen=new Set([src.join(",")]);
+  while(q.length){ const cell=q.shift(); if(cell===sink) return true;
+    const [r,c]=cell.split(",").map(Number);
+    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nk=(r+dr)+","+(c+dc);
+      if(r+dr<0||c+dc<0||r+dr>=h||c+dc>=w||walls.has(nk)||seen.has(nk)) continue; seen.add(nk); q.push(nk); } }
+  return false;
+}
+
+/* boot directly into a campaign (used by import + menu) */
+async function bootIntoCampaign(id){
+  CampaignManager.load(id);
+  State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.filesSeen={};
+  Trace.reset();
+  await Term.clear();
+  State.mode="terminal"; State.busy=true; Term.showInput(false);
+  await Game.intro();
+  State.busy=false;
+  Term.setPrompt(State.prompt()); Term.showInput(true); Line.clear();
+}
+
+/* ---- tab completion ---- */
+function commonPrefix(arr){
+  if(!arr.length) return ""; let p=arr[0];
+  for(const s of arr){ while(!s.startsWith(p)) p=p.slice(0,-1); }
+  return p;
+}
+async function tabComplete(){
+  const buf=Line.buf; const parts=buf.split(/\s+/);
+  let pool=[], frag="";
+  if(parts.length<=1){ frag=parts[0]||""; pool=Commands.primary(); }
+  else {
+    const cmd=parts[0].toLowerCase(); frag=parts[parts.length-1];
+    const fileCmds=["cat","read","open","more","download","get","exfil"];
+    if(fileCmds.includes(cmd) && State.target) pool=Object.keys(State.target.files);
+    else if(cmd==="connect"||cmd==="dial"||cmd==="ssh"){ const m=State.mission; pool=m?[m.targetId]:[]; }
+    else if(cmd==="buy") pool=SHOP.map(s=>s.key);
+    else if(cmd==="man") pool=Commands.primary();
+    else pool=[];
+  }
+  const cands=pool.filter(n=>n.startsWith(frag));
+  if(!cands.length) return;
+  if(cands.length===1){
+    parts[parts.length-1]=cands[0]; Line.buf=parts.join(" "); Line.render(); Audio.type();
+  } else {
+    const pre=commonPrefix(cands);
+    if(pre.length>frag.length){ parts[parts.length-1]=pre; Line.buf=parts.join(" "); Line.render(); }
+    Term.echo(State.prompt(), buf);
+    await Term.print("  "+cands.join("    "),{cls:"c-faint",instant:true});
+  }
+}
 
 /* ========================== [BOOT / INIT] ================================= */
 const Line = {
@@ -1312,7 +1959,7 @@ const Boot = {
     await Term.clear();
     State.mode="boot"; Term.showInput(false);
     const b={cls:"c-dim", speed:CONFIG.bootSpeed};
-    await Term.print("CRT-80 INTRUSION DECK   /   PHOSPHOR BIOS v3.7", b);
+    await Term.print("AFTERWARE   //   PHOSPHOR BIOS v3.7", b);
     await Term.print("(c) blackboard systems  --  no warranty, no mercy", b);
     await Term.blank();
     await Term.print("memory check ............ 640K OK", b);
@@ -1326,6 +1973,9 @@ const Boot = {
     await Term.print("establishing anonymous uplink ...", {cls:"c-faint", speed:CONFIG.bootSpeed});
     await sleep(500);
     await Term.print("uplink secured. routing scrambled.", {cls:"c-faint", speed:CONFIG.bootSpeed});
+    await Term.blank();
+    for(const l of LOGO) await Term.print(l,{cls:"logo-line bright",instant:true});
+    await Term.print("        what's left of you keeps running.",{cls:"c-dim"});
     await Term.blank();
     Term.setPrompt("operator handle: ");
     State.mode="login"; Term.showInput(true); Line.clear();
@@ -1354,6 +2004,8 @@ async function submitLine(){
   }
   if(State.mode==="terminal"){
     Term.echo(State.prompt(), text); Line.clear();
+    if(text.trim()){ State.history.push(text); if(State.history.length>50) State.history.shift(); }
+    State.histIdx=State.history.length;
     State.busy=true; Term.showInput(false);
     await Commands.run(text);
     State.busy=false;
@@ -1364,6 +2016,14 @@ async function submitLine(){
 function onKey(e){
   if(State.mode==="off"){ e.preventDefault(); Boot.powerOn(); return; }
   if(State.mode==="boot"||State.mode==="end"){ return; }
+  if(State.mode==="settings"){
+    if(e.key==="Escape"){ e.preventDefault(); Settings.close(); }
+    return;
+  }
+  if(State.mode==="choice"){
+    if(/^[1-9]$/.test(e.key)){ e.preventDefault(); Audio.key(); Game.pickChoice(parseInt(e.key,10)); }
+    return;
+  }
   if(State.mode==="puzzle"){
     if(e.key==="Escape"){ e.preventDefault(); Puzzles.abort(); return; }
     if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)||e.code==="Space"||e.key==="Backspace"||e.key==="Enter") e.preventDefault();
@@ -1377,7 +2037,21 @@ function onKey(e){
   if(State.busy) return;
   if(e.key==="Enter"){ e.preventDefault(); submitLine(); return; }
   if(e.key==="Backspace"){ e.preventDefault(); Audio.key(); Line.back(); return; }
+  if(State.mode==="terminal"){
+    if(e.key==="Tab"){ e.preventDefault(); tabComplete(); return; }
+    if(e.key==="ArrowUp"){ e.preventDefault(); histRecall(-1); return; }
+    if(e.key==="ArrowDown"){ e.preventDefault(); histRecall(1); return; }
+  }
   if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey){ Audio.key(); Line.add(e.key); }
+}
+
+/* command-history recall (up/down) */
+function histRecall(dir){
+  const h=State.history; if(!h.length) return;
+  State.histIdx += dir;
+  if(State.histIdx<0) State.histIdx=0;
+  if(State.histIdx>=h.length){ State.histIdx=h.length; Line.buf=""; Line.render(); return; }
+  Line.buf=h[State.histIdx]; Line.render();
 }
 
 function init(){
@@ -1393,10 +2067,14 @@ function init(){
     e.currentTarget.innerHTML = m ? "&#9834; OFF" : "&#9835; SND";
   });
   FX.init();
+  Settings.wire();
+  Settings.apply();
   // initial power-off splash
   Term.showInput(false);
-  Term.instant("",); 
-  Term.instant("        \u2588 CRT-80 INTRUSION DECK","c-dim");
+  Term.instant("",);
+  for(const l of LOGO) Term.instant(l,"logo-line bright");
+  Term.instant("",);
+  Term.instant("        what's left of you keeps running.","c-dim");
   Term.instant("",);
   Term.instant("        press any key or click to power on","c-amber");
   State.mode="off";

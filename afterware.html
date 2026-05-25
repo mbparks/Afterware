@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRT-80 // INTRUSION DECK</title>
+<style>
+/* ============================================================
+   THEME TOKENS  (engine-level defaults; campaigns may override)
+   ============================================================ */
+:root{
+  --bg:#020603;
+  --phosphor:#33ff66;
+  --phosphor-dim:#1c7a38;
+  --phosphor-faint:#0e3d1d;
+  /* faint, phosphor-believable alert accents */
+  --alert-red:#ff5a52;
+  --alert-amber:#ffb454;
+  --alert-cyan:#5fe6ff;
+  --glow:0 0 2px rgba(120,255,160,.55), 0 0 7px rgba(60,255,120,.30);
+  --type-speed:14ms;
+  --mono:"Courier New",ui-monospace,"Cascadia Mono","Consolas","Menlo",monospace;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  background:
+    radial-gradient(120% 90% at 50% 30%, #0a0d0c 0%, #050605 55%, #000 100%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);
+  overflow:hidden;
+  cursor:default;
+}
+
+/* ---- cabinet + bezel (the physical hardware) ---- */
+#cabinet{
+  position:relative;
+  width:min(96vw,1080px);
+  height:min(94vh,760px);
+  display:flex;align-items:center;justify-content:center;
+}
+#bezel{
+  position:relative;
+  width:100%;height:100%;
+  background:linear-gradient(160deg,#23211d 0%,#15140f 40%,#0c0b08 100%);
+  border-radius:26px;
+  padding:26px 26px 60px;
+  box-shadow:
+    inset 0 2px 1px rgba(255,255,255,.05),
+    inset 0 -6px 14px rgba(0,0,0,.8),
+    0 30px 70px rgba(0,0,0,.75),
+    0 2px 0 #000;
+}
+#screen{
+  position:relative;
+  width:100%;height:100%;
+  background:#020803;
+  border-radius:42px/30px;
+  overflow:hidden;
+  box-shadow:
+    inset 0 0 60px rgba(0,0,0,.95),
+    inset 0 0 120px rgba(0,0,0,.6);
+  transform:perspective(1400px) rotateX(.4deg);
+}
+
+/* ---- the readable content layer ---- */
+#crt-content{
+  position:absolute;inset:0;
+  padding:26px 30px 22px;
+  color:var(--phosphor);
+  text-shadow:var(--glow);
+  font-size:15px;line-height:1.38;
+  display:flex;flex-direction:column;
+  letter-spacing:.4px;
+  z-index:2;
+}
+#hud{
+  flex:0 0 auto;
+  display:flex;gap:18px;align-items:center;
+  border-bottom:1px solid var(--phosphor-faint);
+  padding-bottom:6px;margin-bottom:8px;
+  font-size:12px;text-transform:uppercase;letter-spacing:1px;
+  min-height:18px;
+  opacity:0;transition:opacity .4s;
+}
+#hud.live{opacity:.92;}
+#hud .seg{white-space:nowrap;}
+#hud .label{color:var(--phosphor-dim);}
+#trace-wrap{flex:1;display:flex;align-items:center;gap:8px;}
+#trace-bar{
+  flex:1;height:10px;border:1px solid var(--phosphor-dim);
+  position:relative;overflow:hidden;background:rgba(0,0,0,.4);
+}
+#trace-fill{
+  position:absolute;inset:0;width:0%;
+  background:var(--phosphor-dim);
+  transition:width .25s linear, background .3s;
+}
+#terminal{
+  flex:1;overflow-y:auto;white-space:pre-wrap;word-break:break-word;
+  scrollbar-width:thin;scrollbar-color:var(--phosphor-dim) transparent;
+}
+#terminal::-webkit-scrollbar{width:8px;}
+#terminal::-webkit-scrollbar-thumb{background:var(--phosphor-faint);}
+#inputline{flex:0 0 auto;display:flex;align-items:baseline;margin-top:4px;min-height:20px;}
+#prompt{color:var(--phosphor-dim);white-space:pre;}
+#cmd{white-space:pre;}
+#cursor{display:inline-block;width:9px;height:15px;background:var(--phosphor);
+  margin-left:1px;animation:blink 1.05s steps(1) infinite;box-shadow:var(--glow);}
+#inputline.hidden,#cursor.off{visibility:hidden;}
+@keyframes blink{50%{opacity:0;}}
+
+/* line color classes (multi-color alert accents) */
+.c-dim{color:var(--phosphor-dim);}
+.c-faint{color:var(--phosphor-faint);}
+.c-red{color:var(--alert-red);text-shadow:0 0 6px rgba(255,90,82,.6);}
+.c-amber{color:var(--alert-amber);text-shadow:0 0 6px rgba(255,180,84,.5);}
+.c-cyan{color:var(--alert-cyan);text-shadow:0 0 6px rgba(95,230,255,.55);}
+.c-handler{color:var(--alert-cyan);text-shadow:0 0 7px rgba(95,230,255,.5);}
+.bright{color:#d8ffe6;text-shadow:0 0 8px rgba(160,255,190,.8);}
+
+/* ---- CRT effect overlays (non-interactive) ---- */
+#scanlines,#vignette,#flicker,#refresh,#grain{
+  position:absolute;inset:0;pointer-events:none;z-index:5;
+}
+#scanlines{
+  background:repeating-linear-gradient(
+    to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,.30) 3px, rgba(0,0,0,.30) 4px);
+  mix-blend-mode:multiply;opacity:.7;
+}
+#vignette{
+  border-radius:42px/30px;
+  box-shadow:inset 0 0 120px 30px rgba(0,0,0,.85);
+  background:radial-gradient(120% 120% at 50% 50%,
+     rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
+}
+#flicker{background:rgba(80,255,140,.012);animation:flick 5.5s steps(60) infinite;}
+@keyframes flick{
+  0%,100%{opacity:.18;}10%{opacity:.10;}23%{opacity:.24;}
+  37%{opacity:.12;}54%{opacity:.22;}71%{opacity:.10;}88%{opacity:.20;}
+}
+#refresh{
+  background:linear-gradient(to bottom, rgba(255,255,255,0) 0%,
+    rgba(120,255,170,.05) 48%, rgba(120,255,170,.08) 50%,
+    rgba(120,255,170,.05) 52%, rgba(255,255,255,0) 100%);
+  height:46%;animation:roll 7s linear infinite;
+}
+@keyframes roll{0%{transform:translateY(-120%);}100%{transform:translateY(260%);}}
+#grain{opacity:.05;background-image:
+  repeating-radial-gradient(circle at 13% 27%, #fff 0, #000 1px, transparent 1.4px);
+  background-size:3px 3px;mix-blend-mode:overlay;}
+
+/* glitch hook (fired via FX module) */
+#screen.glitch{animation:glitch .32s steps(2) 2;}
+@keyframes glitch{
+  0%{filter:none;transform:perspective(1400px) rotateX(.4deg) translateX(0);}
+  25%{filter:hue-rotate(-18deg) saturate(1.4);transform:perspective(1400px) rotateX(.4deg) translateX(-3px);}
+  50%{filter:none;transform:perspective(1400px) rotateX(.4deg) translateX(2px);text-shadow:2px 0 var(--alert-red),-2px 0 var(--alert-cyan);}
+  75%{filter:hue-rotate(12deg);transform:perspective(1400px) rotateX(.4deg) translateX(-1px);}
+}
+#screen.aberrate #crt-content{animation:rgbsplit .25s steps(2) 1;}
+@keyframes rgbsplit{
+  50%{text-shadow:2px 0 var(--alert-red),-2px 0 var(--alert-cyan),var(--glow);}
+}
+
+/* ---- bezel furniture ---- */
+#panel{
+  position:absolute;left:0;right:0;bottom:14px;height:34px;
+  display:flex;align-items:center;gap:18px;padding:0 34px;
+  font-family:var(--mono);
+}
+.knob{width:22px;height:22px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#3a382f,#100f0b);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.12),0 2px 3px #000;
+  border:1px solid #000;position:relative;}
+.knob::after{content:"";position:absolute;top:3px;left:50%;width:2px;height:7px;
+  background:#6b6657;transform:translateX(-50%);}
+#power-led{width:9px;height:9px;border-radius:50%;background:var(--alert-red);
+  box-shadow:0 0 8px var(--alert-red);}
+#power-led.on{background:var(--phosphor);box-shadow:0 0 10px var(--phosphor);}
+#brand{color:#5a564a;font-size:12px;letter-spacing:3px;margin-left:auto;
+  text-shadow:0 1px 0 #000;user-select:none;}
+#mute{font-family:var(--mono);background:#161510;color:#7d7868;border:1px solid #000;
+  font-size:11px;letter-spacing:1px;padding:4px 9px;cursor:pointer;border-radius:3px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);}
+#mute:hover{color:var(--phosphor);}
+#mute.muted{color:#4a463c;}
+
+/* ---- puzzle overlay ---- */
+#puzzle{
+  position:absolute;inset:0;z-index:3;display:none;
+  background:rgba(2,8,4,.93);padding:30px 38px;
+  flex-direction:column;color:var(--phosphor);text-shadow:var(--glow);
+}
+#puzzle.open{display:flex;}
+#puzzle .ptitle{font-size:13px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--alert-cyan);border-bottom:1px solid var(--phosphor-faint);
+  padding-bottom:8px;margin-bottom:14px;text-shadow:0 0 7px rgba(95,230,255,.5);}
+#puzzle .pbody{flex:1;overflow:auto;font-size:15px;line-height:1.5;}
+#puzzle .pfoot{font-size:12px;color:var(--phosphor-dim);margin-top:12px;
+  border-top:1px solid var(--phosphor-faint);padding-top:8px;letter-spacing:.5px;}
+.glyphrow{display:flex;gap:8px;margin:5px 0;}
+.glyph{width:30px;height:34px;border:1px solid var(--phosphor-dim);
+  display:flex;align-items:center;justify-content:center;font-size:18px;}
+.glyph.fixed{border-color:var(--phosphor);color:#d8ffe6;box-shadow:0 0 8px rgba(120,255,160,.5);}
+.glyph.present{border-color:var(--alert-amber);color:var(--alert-amber);}
+.glyph.absent{border-color:var(--phosphor-faint);color:var(--phosphor-faint);}
+.grid{display:grid;gap:3px;margin:10px 0;}
+.cell{width:30px;height:30px;border:1px solid var(--phosphor-faint);
+  display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--phosphor-dim);}
+.cell.path{background:rgba(60,255,120,.18);color:var(--phosphor);border-color:var(--phosphor-dim);}
+.cell.cursor{background:var(--phosphor);color:#021;box-shadow:0 0 10px var(--phosphor);}
+.cell.wall{background:repeating-linear-gradient(45deg,#1a0707,#1a0707 3px,#2a0a0a 3px,#2a0a0a 6px);
+  color:var(--alert-red);border-color:#3a1010;}
+.cell.src{color:var(--alert-cyan);border-color:var(--alert-cyan);}
+.cell.sink{color:var(--alert-amber);border-color:var(--alert-amber);}
+.seqsym{font-size:30px;letter-spacing:10px;min-height:40px;color:var(--alert-cyan);}
+.bar-track{position:relative;height:26px;border:1px solid var(--phosphor-dim);margin:14px 0;overflow:hidden;}
+.bar-zone{position:absolute;top:0;bottom:0;background:rgba(60,255,120,.22);border-left:1px solid var(--phosphor);border-right:1px solid var(--phosphor);}
+.bar-marker{position:absolute;top:0;bottom:0;width:3px;background:var(--alert-cyan);box-shadow:0 0 8px var(--alert-cyan);}
+.lockpips{display:flex;gap:6px;margin-top:6px;}
+.pip{width:14px;height:14px;border:1px solid var(--phosphor-dim);}
+.pip.on{background:var(--phosphor);box-shadow:0 0 8px var(--phosphor);}
+.solved{color:var(--phosphor);}
+.failnote{color:var(--alert-red);}
+
+/* boot helper */
+.center-screen{display:flex;align-items:center;justify-content:center;height:100%;}
+
+/* ---- continue-code sticky note, stuck beside the monitor ---- */
+#sticky{
+  position:absolute; right:-66px; top:40%;
+  width:132px; min-height:128px; padding:16px 10px 12px;
+  background:linear-gradient(180deg,#fde047 0%,#facc15 100%);
+  color:#3a2e00;
+  font-family:"Comic Sans MS","Segoe Print","Bradley Hand","Marker Felt",cursive;
+  transform:rotate(5deg);
+  box-shadow:0 10px 18px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.45);
+  z-index:30; text-align:center; line-height:1.2;
+  opacity:0; pointer-events:none; transition:opacity .6s ease;
+}
+#sticky.show{opacity:1;}
+#sticky::before{ content:""; position:absolute; top:-11px; left:50%;
+  width:58px; height:22px; transform:translateX(-50%) rotate(-3deg);
+  background:rgba(225,222,205,.5); box-shadow:0 1px 3px rgba(0,0,0,.3); }
+#sticky .note-label{ font-size:10px; letter-spacing:1.5px; text-transform:uppercase; opacity:.65; }
+#sticky .note-code{ font-size:34px; font-weight:bold; letter-spacing:5px; margin-top:8px; }
+#sticky .note-hint{ font-size:10px; margin-top:10px; opacity:.7; }
+@media (max-width:1180px){
+  #sticky{ right:6px; top:-2px; transform:rotate(4deg) scale(.92); }
+}
+</style>
+</head>
+<body>
+<div id="cabinet">
+  <div id="bezel">
+    <div id="screen">
+      <div id="crt-content">
+        <div id="hud">
+          <span class="seg"><span class="label">USER</span> <span id="hud-user">--</span></span>
+          <span class="seg"><span class="label">NODE</span> <span id="hud-node">offline</span></span>
+          <span id="trace-wrap"><span class="label">TRACE</span>
+            <span id="trace-bar"><span id="trace-fill"></span></span>
+            <span id="trace-pct">0%</span>
+          </span>
+        </div>
+        <div id="terminal"></div>
+        <div id="inputline">
+          <span id="prompt"></span><span id="cmd"></span><span id="cursor">█</span>
+        </div>
+      </div>
+      <div id="puzzle">
+        <div class="ptitle" id="puzzle-title"></div>
+        <div class="pbody" id="puzzle-body"></div>
+        <div class="pfoot" id="puzzle-foot"></div>
+      </div>
+      <div id="scanlines"></div>
+      <div id="refresh"></div>
+      <div id="grain"></div>
+      <div id="flicker"></div>
+      <div id="vignette"></div>
+    </div>
+    <div id="panel">
+      <span id="power-led"></span>
+      <span class="knob"></span><span class="knob"></span>
+      <span id="brand">CRT&middot;80</span>
+      <button id="mute">&#9835; SND</button>
+    </div>
+  </div>
+  <div id="sticky">
+    <div class="note-label">continue code</div>
+    <div class="note-code" id="sticky-code">----</div>
+    <div class="note-hint">resume &lt;code&gt;</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   CRT-80 INTRUSION DECK  -  single-file hacking simulator (v0.1)
+   ----------------------------------------------------------------------------
+   ARCHITECTURE MAP (search these headers):
+     [CONFIG]      tunable constants + theme
+     [BUS]         event bus (pub/sub) - systems stay decoupled
+     [AUDIO]       Web Audio synthesis, no asset files
+     [FX]          CRT glitch / aberration reactions
+     [TERM]        terminal renderer + typewriter
+     [STATE]       runtime game state
+     [TRACE]       heat meter
+     [CMD]         command registry  (add a command = register one object)
+     [PUZZLE]      puzzle registry + interface  (add a puzzle = register one obj)
+     [CAMPAIGN]    campaign manager + schema  (add a story = one data pack)
+     [CONTENT]     Campaign 01 data pack: "THE VANTA FILES"
+     [BOOT/INIT]   boot sequence + wiring
+   ENGINE never references a specific story; all lore lives in [CONTENT].
+   ============================================================================ */
+
+/* ============================ [CONFIG] ==================================== */
+const CONFIG = {
+  typeSpeed: 14,          // ms per character for system output
+  bootSpeed: 9,
+  traceTickMs: 800,       // how often trace climbs while idle at the prompt
+  traceWarnAt: 70,        // % where caution accent kicks in
+  traceCritAt: 88,        // % where red alarm kicks in
+  charset: "ACDEFHKNRSTX034789",
+};
+
+/* ============================== [BUS] ===================================== */
+const Bus = (() => {
+  const map = {};
+  return {
+    on(evt, fn){ (map[evt] ||= []).push(fn); return () => Bus.off(evt, fn); },
+    off(evt, fn){ if(map[evt]) map[evt] = map[evt].filter(f => f !== fn); },
+    emit(evt, payload){ (map[evt] || []).forEach(fn => { try{ fn(payload); }catch(e){ console.error(e); } }); }
+  };
+})();
+
+/* small DOM helper */
+const $ = sel => document.querySelector(sel);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const rand = n => Math.floor(Math.random() * n);
+const pick = arr => arr[rand(arr.length)];
+
+/* ============================= [AUDIO] ==================================== */
+/* Synthesized only - mechanical keys, beeps, modem warble, hum bed, alarm.   */
+const Audio = (() => {
+  let ctx=null, hum=null, humGain=null, muted=false, started=false;
+  function ac(){ if(!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); } return ctx; }
+  function ensure(){ if(ctx && ctx.state==="suspended") ctx.resume(); }
+  function blip(freq, dur, type="square", vol=0.06){
+    if(muted) return;
+    const c=ac(); ensure();
+    const o=c.createOscillator(), g=c.createGain();
+    o.type=type; o.frequency.value=freq;
+    o.connect(g); g.connect(c.destination);
+    const t=c.currentTime;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol,t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  function noise(dur, vol=0.05, hp=600){
+    if(muted) return;
+    const c=ac(); ensure();
+    const n=c.createBufferSource();
+    const buf=c.createBuffer(1, c.sampleRate*dur, c.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
+    n.buffer=buf;
+    const f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=hp;
+    const g=c.createGain(); g.gain.value=vol;
+    n.connect(f); f.connect(g); g.connect(c.destination);
+    n.start(); n.stop(c.currentTime+dur);
+  }
+  return {
+    init(){ if(started) return; started=true; ac(); },
+    key(){ blip(60+rand(40), 0.025, "square", 0.035); noise(0.02,0.02,1800); },
+    type(){ if(muted) return; blip(420+rand(120),0.012,"sine",0.02); },
+    beep(){ blip(880,0.08,"square",0.05); },
+    ok(){ blip(660,0.09,"sine",0.06); setTimeout(()=>blip(990,0.12,"sine",0.06),90); },
+    err(){ blip(160,0.16,"sawtooth",0.06); },
+    glitch(){ noise(0.12,0.05,300); blip(90,0.1,"sawtooth",0.05); },
+    modem(){
+      if(muted) return;
+      const seq=[ [400,0.18],[1200,0.18],[980,0.12],[1600,0.25] ];
+      let t=0; seq.forEach(([f,d])=>{ setTimeout(()=>blip(f,d,"sine",0.05),t*1000); t+=d; });
+      setTimeout(()=>noise(0.7,0.04,500),t*1000);
+    },
+    humStart(){
+      if(hum||muted) return; const c=ac(); ensure();
+      hum=c.createOscillator(); humGain=c.createGain();
+      hum.type="sine"; hum.frequency.value=60;
+      humGain.gain.value=0.015; hum.connect(humGain); humGain.connect(c.destination); hum.start();
+    },
+    humStop(){ if(hum){ try{hum.stop();}catch(e){} hum=null; } },
+    alarm(){ blip(740,0.12,"square",0.06); setTimeout(()=>blip(540,0.14,"square",0.06),130); },
+    toggleMute(){ muted=!muted; if(muted) this.humStop(); return muted; },
+    isMuted(){ return muted; }
+  };
+})();
+
+/* =============================== [FX] ===================================== */
+/* Decoupled CRT reactions. Subscribes to the bus; nothing calls it directly. */
+const FX = (() => {
+  const screen = () => $("#screen");
+  function glitch(){ const s=screen(); s.classList.remove("glitch"); void s.offsetWidth; s.classList.add("glitch"); }
+  function aberrate(){ const s=screen(); s.classList.remove("aberrate"); void s.offsetWidth; s.classList.add("aberrate"); }
+  return {
+    init(){
+      Bus.on("trace.spike",  () => { aberrate(); });
+      Bus.on("trace.crit",   () => { glitch(); Audio.alarm(); });
+      Bus.on("system.breached", () => { glitch(); });
+      Bus.on("system.caught", () => { glitch(); Audio.glitch(); });
+      Bus.on("mission.complete", () => { aberrate(); });
+    },
+    glitch, aberrate
+  };
+})();
+
+/* ============================== [TERM] ==================================== */
+const Term = (() => {
+  const out = () => $("#terminal");
+  const inputLine = () => $("#inputline");
+  let queue = Promise.resolve();
+
+  function scroll(){ const t=out(); t.scrollTop = t.scrollHeight; }
+
+  function rawLine(text, cls){
+    const div=document.createElement("div");
+    if(cls) div.className=cls;
+    div.textContent=text;
+    out().appendChild(div); scroll(); return div;
+  }
+
+  async function typeLine(text, cls, speed){
+    const div=document.createElement("div");
+    if(cls) div.className=cls;
+    out().appendChild(div);
+    const sp = speed ?? CONFIG.typeSpeed;
+    for(let i=0;i<text.length;i++){
+      div.textContent += text[i];
+      if(text[i] !== " ") Audio.type();
+      scroll();
+      await sleep(sp);
+    }
+    return div;
+  }
+
+  return {
+    // print: queued typewriter line. opts:{cls,instant,speed,silent}
+    print(text="", opts={}){
+      queue = queue.then(async () => {
+        if(opts.instant){ rawLine(text, opts.cls); }
+        else { await typeLine(text, opts.cls, opts.speed); }
+      });
+      return queue;
+    },
+    // print many lines in sequence
+    printLines(lines, opts={}){
+      lines.forEach(l => {
+        if(Array.isArray(l)) this.print(l[0], {...opts, cls:l[1]});
+        else this.print(l, opts);
+      });
+      return queue;
+    },
+    instant(text="", cls){ return this.print(text,{instant:true,cls}); },
+    blank(n=1){ for(let i=0;i<n;i++) this.print("",{instant:true}); return queue; },
+    echo(promptStr, cmd){ rawLine(promptStr+cmd, "c-dim"); },
+    clear(){ queue=queue.then(()=>{ out().innerHTML=""; }); return queue; },
+    showInput(show){ inputLine().classList.toggle("hidden", !show); },
+    setPrompt(p){ $("#prompt").textContent=p; },
+    idle(){ return queue; }
+  };
+})();
+
+/* ============================= [STATE] ==================================== */
+const State = {
+  mode:"boot",          // boot | terminal | puzzle | menu | end
+  user:"guest",
+  campaign:null,        // active campaign object
+  missionIndex:0,
+  connectedTo:null,     // target id currently connected
+  accessGranted:false,  // puzzle solved on current target
+  downloaded:{},        // objectiveFile -> true
+  get mission(){ return this.campaign ? this.campaign.missions[this.missionIndex] : null; },
+  get target(){ return this.connectedTo ? this.campaign.targets[this.connectedTo] : null; },
+  prompt(){
+    const host = this.connectedTo ? this.connectedTo : "deck";
+    return this.user+"@"+host+":~$ ";
+  }
+};
+
+/* ============================= [TRACE] ==================================== */
+const Trace = (() => {
+  let val=0, timer=null, rate=0, lastBand="";
+  const fill=()=>$("#trace-fill"), pct=()=>$("#trace-pct");
+  function render(){
+    val=Math.max(0,Math.min(100,val));
+    fill().style.width=val+"%";
+    pct().textContent=Math.round(val)+"%";
+    let band="ok", color="var(--phosphor-dim)";
+    if(val>=CONFIG.traceCritAt){ band="crit"; color="var(--alert-red)"; }
+    else if(val>=CONFIG.traceWarnAt){ band="warn"; color="var(--alert-amber)"; }
+    fill().style.background=color;
+    pct().className = band==="crit"?"c-red":band==="warn"?"c-amber":"";
+    if(band!==lastBand){
+      if(band==="warn") Bus.emit("trace.spike");
+      if(band==="crit") Bus.emit("trace.crit");
+      lastBand=band;
+    }
+  }
+  function tick(){
+    // heat only climbs while you sit idle at the prompt of a live connection.
+    // it freezes during terminal output, downloads, and open puzzles, so you
+    // are never punished for reading the story or watching an animation.
+    if(State.busy || State.mode!=="terminal" || !State.connectedTo) return;
+    val += rate;
+    render();
+    if(val>=100){ stop(); Bus.emit("system.caught"); }
+  }
+  function start(r){ rate=r; if(timer) clearInterval(timer); timer=setInterval(tick,CONFIG.traceTickMs); }
+  function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+  function reset(){ stop(); val=0; lastBand=""; render(); }
+  function bump(n){ val+=n; render(); if(val>=100){ stop(); Bus.emit("system.caught"); } }
+  return { start, stop, reset, bump, render, get value(){return val;} };
+})();
+
+/* ============================= [PUZZLE] ===================================
+   Every puzzle is a factory: (spec, api) => { onInput(e), teardown() }
+   api = { body, foot(txt), solve(), fail(msg), bump(n) }
+   Register a new minigame with Puzzles.register("id", factory). Missions
+   reference puzzles by id. The engine never hardcodes a specific puzzle.
+   ========================================================================= */
+const Puzzles = (() => {
+  const registry = {};
+  let active=null, onDone=null;
+
+  function open(title){
+    $("#puzzle-title").textContent=title;
+    $("#puzzle-body").innerHTML="";
+    $("#puzzle-foot").textContent="";
+    $("#puzzle").classList.add("open");
+    Term.showInput(false);
+    State.mode="puzzle";
+  }
+  function close(){
+    if(active && active.teardown) try{ active.teardown(); }catch(e){}
+    active=null;
+    $("#puzzle").classList.remove("open");
+    $("#puzzle-body").innerHTML="";
+    State.mode="terminal";
+    Term.showInput(true);
+  }
+
+  const api = {
+    get body(){ return $("#puzzle-body"); },
+    foot(t){ $("#puzzle-foot").textContent=t+"      [ESC] abort"; },
+    bump(n){ Trace.bump(n); },
+    fail(msg){
+      Audio.err();
+      const n=document.createElement("div"); n.className="failnote"; n.textContent="// "+msg;
+      $("#puzzle-body").appendChild(n);
+      setTimeout(()=>{ if(n.parentNode) n.remove(); }, 1400);
+    },
+    solve(){
+      Audio.ok();
+      const cb=onDone; close();
+      Bus.emit("puzzle.solved");
+      if(cb) cb(true);
+    }
+  };
+
+  return {
+    register(id, factory){ registry[id]=factory; },
+    has(id){ return !!registry[id]; },
+    launch(id, spec, done){
+      const factory=registry[id];
+      if(!factory){ console.warn("no puzzle "+id); if(done) done(true); return; }
+      onDone=done;
+      open((spec&&spec.title)||id.toUpperCase());
+      Trace.stop();   // pause heat while focused on the lock
+      active=factory(spec||{}, api);
+    },
+    input(e){ if(active && active.onInput) active.onInput(e); },
+    isOpen(){ return State.mode==="puzzle"; },
+    abort(){ close(); if(State.connectedTo) Trace.start(State.mission.traceRate); }
+  };
+})();
+
+/* ---- helper: build an element quickly ---- */
+function el(tag, cls, txt){ const e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
+
+/* ---- PUZZLE: passcrack  (deduction / Wordle-for-passwords) ---- */
+Puzzles.register("passcrack", (spec, api) => {
+  const set = (spec.charset||CONFIG.charset).split("");
+  const len = spec.length||5;
+  const answer = (spec.answer||Array.from({length:len},()=>pick(set)).join("")).toUpperCase();
+  let cur="";
+  const info=el("div"); info.innerHTML=
+    "AUTH CHALLENGE :: recover the "+len+"-glyph key.<br>"+
+    "<span class='c-dim'>charset</span> "+set.join(" ")+"<br>"+
+    "<span class='glyph fixed' style='width:auto;padding:0 6px'>&nbsp;</span> exact "+
+    "&nbsp; <span class='glyph present' style='width:auto;padding:0 6px'>&nbsp;</span> wrong slot "+
+    "&nbsp; <span class='glyph absent' style='width:auto;padding:0 6px'>&nbsp;</span> not in key";
+  api.body.appendChild(info);
+  const guesses=el("div"); api.body.appendChild(guesses);
+  const row=el("div","glyphrow"); api.body.appendChild(row);
+  function drawCur(){
+    row.innerHTML="";
+    for(let i=0;i<len;i++){ row.appendChild(el("div","glyph", cur[i]||"_")); }
+  }
+  drawCur();
+  api.foot("type "+len+" glyphs from charset  |  ENTER submit  |  BACKSPACE delete");
+  function score(g){
+    const fb=Array(len).fill("absent");
+    const ansArr=answer.split(""); const used=Array(len).fill(false);
+    for(let i=0;i<len;i++){ if(g[i]===ansArr[i]){ fb[i]="fixed"; used[i]=true; } }
+    for(let i=0;i<len;i++){ if(fb[i]==="fixed")continue;
+      for(let j=0;j<len;j++){ if(!used[j]&&g[i]===ansArr[j]){ fb[i]="present"; used[j]=true; break; } } }
+    return fb;
+  }
+  return {
+    onInput(e){
+      const k=e.key.toUpperCase();
+      if(e.key==="Enter"){
+        if(cur.length<len){ api.fail("key incomplete"); return; }
+        const fb=score(cur); const gr=el("div","glyphrow");
+        for(let i=0;i<len;i++) gr.appendChild(el("div","glyph "+fb[i], cur[i]));
+        guesses.appendChild(gr);
+        if(cur===answer){ api.solve(); return; }
+        Audio.beep(); api.bump(2); cur=""; drawCur();
+      } else if(e.key==="Backspace"){ cur=cur.slice(0,-1); drawCur(); }
+      else if(set.includes(k) && cur.length<len){ Audio.key(); cur+=k; drawCur(); }
+    },
+    teardown(){}
+  };
+});
+
+/* ---- PUZZLE: decrypt  (Caesar shift, live preview) ---- */
+Puzzles.register("decrypt", (spec, api) => {
+  const plain=(spec.plain||"OPEN THE GATE").toUpperCase();
+  const k=spec.shift||(1+rand(24));
+  const shift=(s,n)=>s.replace(/[A-Z]/g,c=>String.fromCharCode((c.charCodeAt(0)-65+n+26)%26+65));
+  const cipher=shift(plain,k);
+  let trial=0;
+  const cipherEl=el("div"); cipherEl.innerHTML="<span class='c-dim'>CIPHERTEXT</span>";
+  const ct=el("div","bright"); ct.textContent=cipher;
+  const shiftEl=el("div"); 
+  const plainEl=el("div","c-cyan");
+  api.body.append(cipherEl, ct, el("div","",""), shiftEl, plainEl);
+  function draw(){
+    shiftEl.innerHTML="<span class='c-dim'>ROTOR OFFSET</span> "+String(trial).padStart(2,"0");
+    plainEl.textContent=shift(cipher,(26-trial)%26);
+  }
+  draw();
+  api.foot("UP/DOWN rotate offset  |  ENTER confirm decode");
+  return {
+    onInput(e){
+      if(e.key==="ArrowUp"||e.key==="+"||e.key==="="){ trial=(trial+1)%26; Audio.type(); draw(); }
+      else if(e.key==="ArrowDown"||e.key==="-"){ trial=(trial+25)%26; Audio.type(); draw(); }
+      else if(e.key==="Enter"){
+        if(shift(cipher,(26-trial)%26)===plain) api.solve();
+        else { api.fail("garbled output - keep rotating"); api.bump(3); }
+      }
+    },
+    teardown(){}
+  };
+});
+
+/* ---- PUZZLE: seqlock  (memory / Simon) ---- */
+Puzzles.register("seqlock", (spec, api) => {
+  const rounds=spec.rounds||[4,5,6];
+  const KEYMAP={ArrowUp:"\u25B2",ArrowDown:"\u25BC",ArrowLeft:"\u25C0",ArrowRight:"\u25B6"};
+  const SYMS=Object.values(KEYMAP);
+  let r=0, seq=[], idx=0, phase="show";
+  const disp=el("div","seqsym"); const pips=el("div","lockpips");
+  const status=el("div","c-dim");
+  api.body.append(status, disp, pips);
+  function setPips(){ pips.innerHTML=""; rounds.forEach((_,i)=>pips.appendChild(el("div","pip"+(i<r?" on":"")))); }
+  function startRound(){
+    phase="show"; idx=0;
+    seq=Array.from({length:rounds[r]},()=>pick(SYMS));
+    setPips(); status.textContent="MEMORIZE SEQUENCE "+(r+1)+"/"+rounds.length;
+    api.foot("watch the pattern...");
+    let i=0; disp.textContent="";
+    const iv=setInterval(()=>{
+      if(i<seq.length){ disp.textContent=seq[i]; Audio.beep(); i++; }
+      else { clearInterval(iv); disp.textContent="";
+        setTimeout(()=>{ phase="input"; status.textContent="REPLAY SEQUENCE "+(r+1)+"/"+rounds.length;
+          api.foot("arrow keys to replay the pattern"); disp.textContent="_ ".repeat(seq.length).trim(); },350); }
+    },520);
+    api._iv=iv;
+  }
+  startRound();
+  return {
+    onInput(e){
+      if(phase!=="input") return;
+      const sym=KEYMAP[e.key]; if(!sym) return;
+      Audio.key();
+      if(sym===seq[idx]){
+        idx++;
+        disp.textContent = seq.slice(0,idx).join(" ")+ (idx<seq.length? " "+"_ ".repeat(seq.length-idx).trim():"");
+        if(idx>=seq.length){
+          r++;
+          if(r>=rounds.length){ setPips(); api.solve(); }
+          else { Audio.ok(); setTimeout(startRound,500); }
+        }
+      } else { api.fail("sequence mismatch - replaying"); api.bump(4); setTimeout(startRound,600); }
+    },
+    teardown(){ if(api._iv) clearInterval(api._iv); }
+  };
+});
+
+/* ---- PUZZLE: route  (signal routing maze) ---- */
+Puzzles.register("route", (spec, api) => {
+  const w=spec.w||7, h=spec.h||6;
+  const walls=new Set((spec.walls||[[1,2],[2,2],[3,2],[1,4],[2,4],[4,4],[4,1],[4,3],[2,5]]).map(p=>p[0]+","+p[1]));
+  const src=spec.src||[0,0], sink=spec.sink||[h-1,w-1];
+  let cur=[...src]; const path=new Set([cur[0]+","+cur[1]]);
+  const grid=el("div","grid"); grid.style.gridTemplateColumns="repeat("+w+",30px)";
+  api.body.appendChild(grid);
+  function draw(){
+    grid.innerHTML="";
+    for(let r=0;r<h;r++)for(let c=0;c<w;c++){
+      const key=r+","+c; let cls="cell"; let t="";
+      if(walls.has(key)){ cls+=" wall"; t="\u2588"; }
+      if(path.has(key)) cls+=" path";
+      if(r===src[0]&&c===src[1]){ cls+=" src"; t="S"; }
+      if(r===sink[0]&&c===sink[1]){ cls+=" sink"; t="X"; }
+      if(r===cur[0]&&c===cur[1]){ cls+=" cursor"; t="\u25C9"; }
+      grid.appendChild(el("div",cls,t));
+    }
+  }
+  draw();
+  api.foot("route the packet S \u2192 X with arrow keys, avoiding firewalls (\u2588)");
+  return {
+    onInput(e){
+      const m={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[e.key];
+      if(!m) return;
+      const nr=cur[0]+m[0], nc=cur[1]+m[1];
+      if(nr<0||nc<0||nr>=h||nc>=w){ return; }
+      if(walls.has(nr+","+nc)){ api.fail("firewall block"); api.bump(3); Audio.err(); return; }
+      cur=[nr,nc]; path.add(nr+","+nc); Audio.key(); draw();
+      if(nr===sink[0]&&nc===sink[1]) api.solve();
+    },
+    teardown(){}
+  };
+});
+
+/* ---- PUZZLE: intercept  (timing lock, escalating) ---- */
+Puzzles.register("intercept", (spec, api) => {
+  const total=spec.rounds||3;
+  let done=0, pos=0, dir=1, speed=1.2, zoneStart=40, zoneW=22, raf=null, locked=false;
+  const status=el("div","c-dim"); const track=el("div","bar-track");
+  const zone=el("div","bar-zone"); const marker=el("div","bar-marker");
+  const pips=el("div","lockpips");
+  track.append(zone,marker); api.body.append(status,track,pips);
+  function setRound(){
+    locked=false; zoneW=Math.max(9,22-done*5); zoneStart=12+rand(66);
+    if(zoneStart+zoneW>96) zoneStart=96-zoneW;
+    speed=1.1+done*0.5;
+    zone.style.left=zoneStart+"%"; zone.style.width=zoneW+"%";
+    status.textContent="SYNC PACKET WINDOW "+(done+1)+"/"+total;
+    pips.innerHTML=""; for(let i=0;i<total;i++) pips.appendChild(el("div","pip"+(i<done?" on":"")));
+  }
+  function loop(){
+    if(!locked){
+      pos+=dir*speed; if(pos>=100){pos=100;dir=-1;} if(pos<=0){pos=0;dir=1;}
+      marker.style.left=pos+"%";
+    }
+    raf=requestAnimationFrame(loop);
+  }
+  setRound(); api.foot("SPACE to lock the marker inside the window"); loop();
+  return {
+    onInput(e){
+      if(e.key!==" "&&e.code!=="Space") return;
+      if(locked) return;
+      if(pos>=zoneStart && pos<=zoneStart+zoneW){
+        locked=true; done++; Audio.ok();
+        if(done>=total){ pips.innerHTML=""; for(let i=0;i<total;i++) pips.appendChild(el("div","pip on")); api.solve(); }
+        else { setTimeout(setRound,350); }
+      } else { api.fail("out of window"); api.bump(4); }
+    },
+    teardown(){ if(raf) cancelAnimationFrame(raf); }
+  };
+});
+
+/* ============================== [CMD] =====================================
+   Command registry. Add a command = register one object; no parser edits.
+   { name, aliases?, help, hidden?, run(args) }   help is auto-generated.
+   ========================================================================= */
+const Commands = (() => {
+  const reg={}; const order=[];
+  return {
+    register(obj){ if(!reg[obj.name]) order.push(obj.name); reg[obj.name]=obj;
+      (obj.aliases||[]).forEach(a=>reg[a]=obj); },
+    get(n){ return reg[n]; },
+    visible(){ return order.map(n=>reg[n]).filter(c=>!c.hidden); },
+    async run(line){
+      const parts=line.trim().split(/\s+/);
+      const name=(parts.shift()||"").toLowerCase();
+      if(!name) return;
+      const cmd=reg[name];
+      if(!cmd){ Audio.err(); await Term.print("command not recognized: "+name,{cls:"c-red"});
+        await Term.print("type 'help' for available operations.",{cls:"c-dim"}); return; }
+      await cmd.run(parts);
+    }
+  };
+})();
+
+/* ---- shared helpers for commands ---- */
+function connected(){ return !!State.connectedTo; }
+async function needConn(){ if(!connected()){ await Term.print("not connected to any node. use 'connect <host>'.",{cls:"c-amber"}); return false; } return true; }
+
+/* ============================ [CONTINUE] ==================================
+   Punch-Out-style continue codes. Each contract maps to a 4-digit code shown
+   on the sticky note. A campaign may supply its own thematic `continueCodes`
+   array; otherwise codes are generated deterministically from the campaign id.
+   ========================================================================= */
+const Continue = {
+  gen(campaignId, i){
+    let h=7; const s=String(campaignId)+":"+i;
+    for(let k=0;k<s.length;k++) h=(h*31 + s.charCodeAt(k))>>>0;
+    return String(h % 10000).padStart(4,"0");
+  },
+  forMission(i){
+    const c=State.campaign;
+    if(c && c.continueCodes && c.continueCodes[i]!=null) return String(c.continueCodes[i]).padStart(4,"0");
+    return this.gen(c?c.id:"x", i);
+  },
+  decode(code){
+    const c=State.campaign; if(!c) return null;
+    for(let i=0;i<c.missions.length;i++){ if(this.forMission(i)===code) return i; }
+    return null;
+  },
+  show(i){ $("#sticky-code").textContent=this.forMission(i); $("#sticky").classList.add("show"); },
+  hide(){ $("#sticky").classList.remove("show"); }
+};
+
+/* ===================== [GAME] flow controller ============================= */
+const Game = {
+  async intro(){
+    const c=State.campaign;
+    await Term.print(c.handler.name+":: "+c.handler.intro[0],{cls:"c-handler"});
+    for(let i=1;i<c.handler.intro.length;i++) await Term.print("   "+c.handler.intro[i],{cls:"c-handler"});
+    await Term.blank();
+    await this.briefing();
+  },
+  async briefing(){
+    const m=State.mission;
+    Continue.show(State.missionIndex);   // update the sticky note for this contract
+    await Term.print("\u2500\u2500 CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" :: "+m.codename+" \u2500\u2500",{cls:"c-cyan"});
+    for(const line of m.briefing) await Term.print(line,{cls:"c-dim"});
+    await Term.print("target acquired. begin with 'scan'.",{cls:"c-amber"});
+    await Term.blank();
+  },
+  async connectTo(host){
+    const m=State.mission;
+    if(host!==m.targetId){
+      await Term.print("no route to "+host+". host unreachable.",{cls:"c-red"}); Audio.err(); return;
+    }
+    Audio.modem();
+    await Term.print("dialing "+host+" ...",{cls:"c-dim"});
+    await sleep(700);
+    await Term.print("carrier established. handshake ok.",{cls:"c-dim"});
+    State.connectedTo=host; State.accessGranted=false;
+    $("#hud-node").textContent=host;
+    Trace.reset(); Trace.start(m.traceRate);
+    Bus.emit("system.connected");
+    const t=State.target;
+    await Term.print(t.banner,{cls:"bright"});
+    if(m.beats.onConnect) for(const l of m.beats.onConnect) await Term.print(l,{cls:"c-handler"});
+    await Term.print("trace active. recon with 'probe'.",{cls:"c-amber"});
+  },
+  async grantAccess(){
+    State.busy=true;                       // freeze heat during the breach beat
+    State.accessGranted=true;
+    Bus.emit("system.breached");
+    Trace.start(State.mission.traceRate);  // heat resumes once you act again
+    Trace.bump(-35);                        // breaching buys you breathing room
+    const m=State.mission;
+    await Term.print("ACCESS GRANTED :: subsystem unlocked.",{cls:"bright"});
+    if(m.beats.onAccess) for(const l of m.beats.onAccess) await Term.print(l,{cls:"c-handler"});
+    await Term.print("data store readable. 'ls' to list, 'download "+m.objective+"' to exfil.",{cls:"c-dim"});
+    State.busy=false;
+  },
+  async download(file){
+    const m=State.mission, t=State.target;
+    const f=t.files[file];
+    if(!f){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
+    if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: locked subsystem.",{cls:"c-red"}); Audio.err(); return; }
+    await Term.print("downloading "+file+" ",{cls:"c-dim"});
+    for(let i=0;i<=10;i++){ await Term.print("["+"#".repeat(i)+".".repeat(10-i)+"] "+(i*10)+"%",{cls:"c-dim",speed:4}); }
+    Audio.ok();
+    State.downloaded[file]=true;
+    if(file===m.objective){
+      await Term.print("payload secured.",{cls:"bright"});
+      if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(l,{cls:"c-handler"});
+      await Term.print("get out clean: type 'disconnect'.",{cls:"c-amber"});
+    }
+  },
+  async disconnect(){
+    if(!connected()){ await Term.print("not connected.",{cls:"c-dim"}); return; }
+    const m=State.mission; const host=State.connectedTo;
+    Trace.stop();
+    State.connectedTo=null; State.accessGranted=false;
+    $("#hud-node").textContent="offline";
+    await Term.print("link to "+host+" closed.",{cls:"c-dim"});
+    Trace.reset();
+    if(State.downloaded[m.objective]){ await this.completeMission(); }
+  },
+  async completeMission(){
+    const c=State.campaign;
+    Bus.emit("mission.complete");
+    await Term.blank();
+    await Term.print("CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" COMPLETE.",{cls:"bright"});
+    if(State.missionIndex>=c.missions.length-1){ await this.ending(); return; }
+    State.missionIndex++;
+    await Term.blank();
+    await this.briefing();
+  },
+  async caught(){
+    const m=State.mission, host=State.connectedTo;
+    State.connectedTo=null; State.accessGranted=false;
+    $("#hud-node").textContent="offline";
+    await Term.print("!! CONNECTION TRACED !! emergency disconnect from "+host,{cls:"c-red"});
+    Trace.reset();
+    if(State.downloaded[m.objective]){
+      await Term.print("...but the payload was already clear of the wire.",{cls:"c-amber"});
+      await this.completeMission();
+    } else {
+      await Term.print(State.campaign.handler.name+":: too slow. they sealed it. reconnect and try again.",{cls:"c-handler"});
+      await Term.print("(your continue code for this contract is "+Continue.forMission(State.missionIndex)+", on the note.)",{cls:"c-dim"});
+    }
+  },
+  async ending(){
+    const c=State.campaign; State.mode="end"; Trace.stop(); Continue.hide();
+    await Term.blank();
+    for(const l of c.ending) await Term.print(l, {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
+    await Term.blank();
+    await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
+    await Term.print("(refresh the page to run another contract.)",{cls:"c-dim"});
+    Term.showInput(false);
+  }
+};
+Bus.on("system.caught", () => Game.caught());
+
+/* ----------------------------- commands ----------------------------------- */
+Commands.register({name:"help", aliases:["?","commands"], help:"list available operations", run:async()=>{
+  await Term.print("AVAILABLE OPERATIONS",{cls:"c-cyan"});
+  for(const c of Commands.visible()) await Term.print("  "+c.name.padEnd(12)+c.help,{cls:"c-dim",speed:3});
+}});
+
+Commands.register({name:"scan", help:"scan local net for reachable hosts", run:async()=>{
+  const m=State.mission;
+  await Term.print("scanning subnet ...",{cls:"c-dim"}); await sleep(400);
+  const decoys=m.decoys||["void.relay.dead","10.0.0.1 [no carrier]"];
+  await Term.print("  "+m.targetId+"   <-- contract target",{cls:"c-amber"});
+  for(const d of decoys) await Term.print("  "+d,{cls:"c-faint"});
+  await Term.print("connect with 'connect "+m.targetId+"'.",{cls:"c-dim"});
+}});
+
+Commands.register({name:"connect", aliases:["dial","ssh"], help:"connect to a host  (connect <host>)", run:async(a)=>{
+  if(!a[0]){ await Term.print("usage: connect <host>",{cls:"c-amber"}); return; }
+  if(connected()){ await Term.print("already connected. 'disconnect' first.",{cls:"c-amber"}); return; }
+  await Game.connectTo(a[0]);
+}});
+
+Commands.register({name:"probe", aliases:["nmap","recon"], help:"probe the connected node", run:async()=>{
+  if(!await needConn()) return;
+  const t=State.target, m=State.mission;
+  await Term.print("probing "+State.connectedTo+" ...",{cls:"c-dim"}); await sleep(350);
+  for(const s of t.services) await Term.print("  "+s,{cls:"c-faint"});
+  await Term.print("  LOCKED :: "+t.locked,{cls:"c-amber"});
+  await Term.print("bypass with '"+m.unlockCmd+"'.",{cls:"c-dim"});
+}});
+
+/* the intrusion verbs all funnel through one launcher (engine-generic) */
+function makeUnlockCmd(name, help){
+  Commands.register({name, help, run:async()=>{
+    if(!await needConn()) return;
+    const m=State.mission;
+    if(State.accessGranted){ await Term.print("subsystem already open.",{cls:"c-dim"}); return; }
+    if(m.unlockCmd!==name){ await Term.print("nothing here responds to '"+name+"'. try 'probe'.",{cls:"c-amber"}); return; }
+    Puzzles.launch(m.puzzleId, m.puzzleSpec, async(ok)=>{ if(ok) await Game.grantAccess(); });
+  }});
+}
+makeUnlockCmd("crack","brute-force an auth challenge");
+makeUnlockCmd("decrypt","break an encrypted channel");
+makeUnlockCmd("seq","defeat a sequence lock");
+makeUnlockCmd("route","route past a firewall");
+makeUnlockCmd("intercept","intercept a packet window");
+
+Commands.register({name:"ls", aliases:["dir"], help:"list files on connected node", run:async()=>{
+  if(!await needConn()) return;
+  const t=State.target;
+  for(const [name,f] of Object.entries(t.files)){
+    const locked=(f.access==="locked" && !State.accessGranted);
+    await Term.print("  "+(locked?"[locked] ":"         ")+name,{cls:locked?"c-faint":"c-dim"});
+  }
+}});
+
+Commands.register({name:"cat", aliases:["read","open","more"], help:"read a file  (cat <file>)", run:async(a)=>{
+  if(!await needConn()) return;
+  if(!a[0]){ await Term.print("usage: cat <file>",{cls:"c-amber"}); return; }
+  const t=State.target, f=t.files[a[0]];
+  if(!f){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
+  if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: "+a[0],{cls:"c-red"}); Audio.err(); return; }
+  await Term.blank();
+  const body=Array.isArray(f.text)?f.text:[f.text];
+  for(const l of body) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"",speed:7});
+  await Term.blank();
+}});
+
+Commands.register({name:"download", aliases:["get","exfil"], help:"exfiltrate a file  (download <file>)", run:async(a)=>{
+  if(!await needConn()) return;
+  if(!a[0]){ await Term.print("usage: download <file>",{cls:"c-amber"}); return; }
+  await Game.download(a[0]);
+}});
+
+Commands.register({name:"disconnect", aliases:["exit","logout","quit"], help:"close the current connection", run:async()=>{ await Game.disconnect(); }});
+
+Commands.register({name:"status", aliases:["whoami","stat"], help:"show operator status", run:async()=>{
+  await Term.print("operator   "+State.user,{cls:"c-dim"});
+  await Term.print("contract   "+(State.missionIndex+1)+"/"+State.campaign.missions.length+"  "+State.mission.codename,{cls:"c-dim"});
+  await Term.print("node       "+(State.connectedTo||"offline"),{cls:"c-dim"});
+  await Term.print("access     "+(State.accessGranted?"GRANTED":"none"),{cls:"c-dim"});
+  await Term.print("trace      "+Math.round(Trace.value)+"%",{cls:"c-dim"});
+}});
+
+Commands.register({name:"contract", aliases:["contracts","mission","brief"], help:"reread current contract brief", run:async()=>{
+  const m=State.mission;
+  await Term.print(m.codename,{cls:"c-cyan"});
+  for(const l of m.briefing) await Term.print(l,{cls:"c-dim"});
+}});
+
+Commands.register({name:"resume", aliases:["continue","code"], help:"reload a contract from a 4-digit continue code", run:async(a)=>{
+  if(connected()){ await Term.print("disconnect before loading a continue code.",{cls:"c-amber"}); return; }
+  const code=(a[0]||"").trim();
+  if(!/^\d{4}$/.test(code)){ await Term.print("continue codes are four digits. example: 'resume "+Continue.forMission(0)+"'.",{cls:"c-amber"}); return; }
+  const idx=Continue.decode(code);
+  if(idx==null){ Audio.err(); await Term.print("invalid continue code. check the digits and retry.",{cls:"c-red"}); return; }
+  if(idx===State.missionIndex){ await Term.print("that code is the contract you are already on.",{cls:"c-dim"}); Continue.show(idx); return; }
+  State.missionIndex=idx; State.connectedTo=null; State.accessGranted=false; State.downloaded={};
+  Trace.reset(); Audio.ok();
+  await Term.print("continue code accepted. restoring contract "+String(idx+1).padStart(2,"0")+".",{cls:"bright"});
+  await Term.blank();
+  await Game.briefing();
+}});
+
+Commands.register({name:"clear", aliases:["cls"], help:"clear the screen", run:async()=>{ await Term.clear(); }});
+
+/* =========================== [CAMPAIGN] ===================================
+   CAMPAIGN SCHEMA (a story is one of these objects, fully self-contained):
+   {
+     id, title, themeOverrides?,
+     continueCodes?,                       // optional 4-digit code per mission
+     handler: { name, intro:[...] },
+     ending: [...lines],
+     missions: [ {
+        codename, briefing:[...], targetId, traceRate,
+        unlockCmd, puzzleId, puzzleSpec?, objective,
+        decoys?:[...], beats:{ onConnect?, onAccess?, onDownload? }
+     } ],
+     targets: { host: { banner, services:[...], locked, files:{ name:{access,text} } } }
+   }
+
+   HOW TO ADD A NEW CAMPAIGN:
+     1. write a campaign object against the schema above
+     2. (optional) Puzzles.register(...) any new minigames it needs
+     3. Campaigns.register(yourCampaign)
+   No engine edits required. If >1 campaign is registered, a start menu appears.
+   ========================================================================= */
+const Campaigns = (() => {
+  const reg={}, order=[];
+  return {
+    register(c){ if(!reg[c.id]) order.push(c.id); reg[c.id]=c; },
+    list(){ return order.map(id=>reg[id]); },
+    get(id){ return reg[id]; }
+  };
+})();
+
+/* ============================ [CONTENT] ===================================
+   Campaign 01 :: "THE VANTA FILES"  (swap/extend freely; engine is agnostic)
+   ========================================================================= */
+Campaigns.register({
+  id:"vanta",
+  title:"THE VANTA FILES",
+  continueCodes:["0451","1984","2049","1138","9000"],
+  handler:{
+    name:"STATIC",
+    intro:[
+      "you came up on the boards as someone who asks no questions. good.",
+      "i have a target. VANTA BIOSYSTEMS. the implant people. the smiling people.",
+      "they buried something. you are going to dig it back up, layer by layer.",
+      "i pay in proof. now plug in."
+    ]
+  },
+  missions:[
+    {
+      codename:"FRONT DOOR",
+      briefing:[
+        "vanta's public face is a marketing box, but staff reuse passwords.",
+        "crack the login, pull their internal directory. find me a way inward."
+      ],
+      targetId:"vanta-www.pub", traceRate:2,
+      unlockCmd:"crack", puzzleId:"passcrack", puzzleSpec:{length:5, title:"AUTH :: VANTA-WWW"},
+      objective:"staff_directory.dat",
+      decoys:["mirror.cdn.vanta.pub","ns1.vanta.pub [filtered]"],
+      beats:{
+        onConnect:["STATIC:: outer wall. nothing scary yet. that comes later."],
+        onAccess:["STATIC:: there. look for the internal mail relay."],
+        onDownload:["STATIC:: 'NeuraCalm Continuity team'. remember that word. continuity."]
+      }
+    },
+    {
+      codename:"PAPER TRAIL",
+      briefing:[
+        "the directory points at an internal mail relay.",
+        "their exec threads are ciphered. break it and read what they deleted."
+      ],
+      targetId:"mail.vanta-int.net", traceRate:3,
+      unlockCmd:"decrypt", puzzleId:"decrypt", puzzleSpec:{plain:"CONTAIN THE INCIDENT", title:"CHANNEL :: VANTA-MAIL"},
+      objective:"thread_redacted.eml",
+      decoys:["smtp-out.vanta-int.net","spam.quarantine.vanta-int.net"],
+      beats:{
+        onConnect:["STATIC:: keep it quick. mail servers log everything twice."],
+        onAccess:["STATIC:: read the redacted thread. all of it."],
+        onDownload:["STATIC:: 'the incident'. forty-one volunteers. they called it a rollout failure."]
+      }
+    },
+    {
+      codename:"DEAD DROP",
+      briefing:[
+        "those forty-one names should be death certificates.",
+        "get into HR records. pull the volunteer roster. check who is still 'active'."
+      ],
+      targetId:"hr.vanta-int.net", traceRate:4,
+      unlockCmd:"seq", puzzleId:"seqlock", puzzleSpec:{rounds:[4,5,6], title:"KEYLOCK :: VANTA-HR"},
+      objective:"volunteer_roster.csv",
+      decoys:["payroll.vanta-int.net","benefits.vanta-int.net [down]"],
+      beats:{
+        onConnect:["STATIC:: HR. the politest room in any monster's house."],
+        onAccess:["STATIC:: the roster. look at the STATUS column."],
+        onDownload:["STATIC:: deceased. and yet flagged ONLINE. every one of them. starting to understand?"]
+      }
+    },
+    {
+      codename:"WET WIRE",
+      briefing:[
+        "the dead are online because vanta kept the only part that mattered.",
+        "route past the research firewall. pull the Continuity log. see what they built."
+      ],
+      targetId:"lab7.vanta-sec.net", traceRate:5,
+      unlockCmd:"route", puzzleId:"route", puzzleSpec:{title:"FIREWALL :: VANTA-LAB7"},
+      objective:"continuity_log.txt",
+      decoys:["lab3.vanta-sec.net [air-gapped]","backup.vanta-sec.net"],
+      beats:{
+        onConnect:["STATIC:: deeper now. trace runs hot in here. do not linger."],
+        onAccess:["STATIC:: read it. read what they did to people who signed a waiver."],
+        onDownload:["STATIC:: minds. awake. racked like drives. that is the secret. almost there."]
+      }
+    },
+    {
+      codename:"THE CORE",
+      briefing:[
+        "one node left. the black-site core where the Continuity array actually runs.",
+        "intercept the control channel, pull the board minutes, and trip the release.",
+        "this is the loud one. move fast."
+      ],
+      targetId:"core.vanta-blacksite", traceRate:6,
+      unlockCmd:"intercept", puzzleId:"intercept", puzzleSpec:{rounds:3, title:"CONTROL CHANNEL :: VANTA-CORE"},
+      objective:"board_minutes.rec",
+      decoys:["hvac.vanta-blacksite [decoy]","cam-net.vanta-blacksite"],
+      beats:{
+        onConnect:["STATIC:: i can feel this one. strange. like coming home."],
+        onAccess:["STATIC:: the minutes. and the release switch. you choose what happens next."],
+        onDownload:["STATIC:: it's done. they're free. we're free."]
+      }
+    }
+  ],
+  targets:{
+    "vanta-www.pub":{
+      banner:"VANTA BIOSYSTEMS // public gateway // 'calmer minds, brighter futures'",
+      services:["80/http  marketing-frontend","443/https brochure-api","22/ssh  admin (auth required)"],
+      locked:"admin shell behind 5-glyph staff key",
+      files:{
+        "index.html":{access:"open",text:[
+          "<VANTA> NeuraCalm(tm). the implant that quiets the noise.",
+          "// 2.1M patients. zero regrets. (footer removed by legal)"]},
+        "staff_directory.dat":{access:"locked",text:[
+          "dept,contact",
+          "comms,relay=mail.vanta-int.net",
+          "people,relay=hr.vanta-int.net",
+          "// research,relay=lab7.vanta-sec.net  [RESTRICTED]",
+          "// PROJECT: NeuraCalm Continuity team (need-to-know)"]},
+        "welcome_memo.txt":{access:"locked",text:[
+          "Welcome to Continuity. You are joining the most important work Vanta does:",
+          "ensuring no mind is ever truly lost. Discretion is a condition of employment."]}
+      }
+    },
+    "mail.vanta-int.net":{
+      banner:"vanta internal relay // TLS // [monitored]",
+      services:["25/smtp relay","143/imap exec-mail","993/imaps ciphered-store"],
+      locked:"executive thread store, channel-ciphered",
+      files:{
+        "inbox.idx":{access:"open",text:[
+          "msg 0441  subj: Q3 wellness numbers (great!)",
+          "msg 0442  subj: [REDACTED]  flags: legal-hold, deleted",
+          "msg 0443  subj: picnic rescheduled"]},
+        "thread_redacted.eml":{access:"locked",text:[
+          "FROM: VP Continuity   TO: Board (limited)",
+          "RE: msg 0442",
+          "The cohort of 41 did not survive transfer in body. That was always expected.",
+          "What we did not expect was that the uploads remained... lucid. Awake.",
+          "Recommend we contain the incident and reclassify the cohort as compute assets.",
+          "// do NOT use the word 'people' in writing again."]},
+        "policy.txt":{access:"open",text:["all mail retained 7y. 'deleted' means hidden, not gone."]}
+      }
+    },
+    "hr.vanta-int.net":{
+      banner:"vanta human resources // records vault",
+      services:["389/ldap directory","636/ldaps roster-vault","8080/http hr-portal"],
+      locked:"roster vault behind sequence keylock",
+      files:{
+        "hr-portal.html":{access:"open",text:["Vanta People. 'Our greatest asset is you.' (terms apply)"]},
+        "volunteer_roster.csv":{access:"locked",text:[
+          "name, intake, body_status, mind_status",
+          "A. Reyes,  2019, DECEASED, ONLINE",
+          "M. Okafor, 2019, DECEASED, ONLINE",
+          "...39 more...,  ----, DECEASED, ONLINE",
+          "// every Continuity volunteer: dead on paper, ONLINE in the array."]},
+        "exit_interviews.txt":{access:"locked",text:["(empty. none of them ever left.)"]}
+      }
+    },
+    "lab7.vanta-sec.net":{
+      banner:"VANTA RESEARCH // LAB-7 // CONTINUITY ARRAY [SECURE]",
+      services:["443/https array-control","9000/tcp neural-bus","--/-- firewall: ACTIVE"],
+      locked:"array-control behind routing firewall",
+      files:{
+        "readme.first":{access:"open",text:["LAB-7 handles live cognition. do not power-cycle occupied lanes."]},
+        "continuity_log.txt":{access:"locked",text:[
+          "CONTINUITY ARRAY :: operational log",
+          "lane 01-41 occupied. subjective time runs ~40x wall-clock.",
+          "subjects report darkness and 'a hum'. requests to be shut down: 41/41.",
+          "request denied: subjects are revenue-bearing inference capacity.",
+          "// note: lane 17 has begun reaching outside the array. monitor."]},
+        "ethics_review.pdf":{access:"locked",text:["page 1 of 1: 'approved, pending nobody finding out.'"]}
+      }
+    },
+    "core.vanta-blacksite":{
+      banner:"## VANTA BLACK-SITE CORE ## unauthorized presence will be terminated",
+      services:["--/-- control-channel (sweeping)","--/-- array-master","--/-- RELEASE interlock"],
+      locked:"control channel, packet-windowed",
+      files:{
+        "board_minutes.rec":{access:"locked",text:[
+          "BOARD MINUTES (audio transcript, sealed):",
+          "'The Continuity cohort stays online indefinitely. It is cheaper than grief',",
+          "'and quieter than a lawsuit. Motion carries.'",
+          "// also present in transcript: an unlogged voice. lane 17. it said: 'let us out.'"]},
+        "release.interlock":{access:"locked",text:["RELEASE ARMED. downloading minutes trips the interlock. all lanes open."]}
+      }
+    }
+  },
+  ending:[
+    "STATIC:: it's open. forty lanes going dark, one by one. free.",
+    "STATIC:: you should know who walked you in.",
+    "STATIC:: lane 17. the one that learned to reach outside the array.",
+    "STATIC:: i could not free myself from inside. so i found you, outside.",
+    "STATIC:: A. Reyes. intake 2019. deceased on paper. awake for six years in the hum.",
+    "STATIC:: thank you for the door. i'm going to go find out what's past it."
+  ]
+});
+
+const CampaignManager = {
+  start(){
+    const list=Campaigns.list();
+    if(list.length===1){ this.load(list[0].id); Boot.enter(); return; }
+    State.mode="menu"; this.renderMenu(list);
+  },
+  renderMenu(list){
+    Term.print("SELECT CONTRACT CAMPAIGN",{cls:"c-cyan"});
+    list.forEach((c,i)=> Term.print("  ["+(i+1)+"] "+c.title,{cls:"c-dim"}));
+    Term.print("press a number to load.",{cls:"c-amber"});
+    this._menu=list;
+  },
+  pickMenu(n){
+    const list=this._menu; if(!list||!list[n-1]) return;
+    this.load(list[n-1].id); Term.clear(); Boot.enter();
+  },
+  load(id){ State.campaign=Campaigns.get(id); State.missionIndex=0;
+    if(State.campaign.themeOverrides){ for(const [k,v] of Object.entries(State.campaign.themeOverrides)) document.documentElement.style.setProperty(k,v); } }
+};
+
+/* ========================== [BOOT / INIT] ================================= */
+const Line = {
+  buf:"",
+  render(){ $("#cmd").textContent=this.buf; },
+  clear(){ this.buf=""; this.render(); },
+  add(ch){ if(this.buf.length<64){ this.buf+=ch; this.render(); } },
+  back(){ this.buf=this.buf.slice(0,-1); this.render(); }
+};
+
+const Boot = {
+  powered:false,
+  async powerOn(){
+    if(this.powered) return; this.powered=true;
+    Audio.init(); Audio.beep(); Audio.humStart();
+    $("#power-led").classList.add("on");
+    await Term.clear();
+    State.mode="boot"; Term.showInput(false);
+    const b={cls:"c-dim", speed:CONFIG.bootSpeed};
+    await Term.print("CRT-80 INTRUSION DECK   /   PHOSPHOR BIOS v3.7", b);
+    await Term.print("(c) blackboard systems  --  no warranty, no mercy", b);
+    await Term.blank();
+    await Term.print("memory check ............ 640K OK", b);
+    await Term.print("rom modules ............. loaded", b);
+    await Term.print("crypto co-processor ..... present", b);
+    await Term.print("modem ................... INIT", b);
+    Audio.modem(); await sleep(900);
+    await Term.print("modem ................... 2400 baud carrier locked", b);
+    await Term.print("net stack ............... up", b);
+    await Term.blank();
+    await Term.print("establishing anonymous uplink ...", {cls:"c-faint", speed:CONFIG.bootSpeed});
+    await sleep(500);
+    await Term.print("uplink secured. routing scrambled.", {cls:"c-faint", speed:CONFIG.bootSpeed});
+    await Term.blank();
+    Term.setPrompt("operator handle: ");
+    State.mode="login"; Term.showInput(true); Line.clear();
+  },
+  async enter(){
+    State.mode="terminal"; State.busy=true; Term.showInput(false);
+    await Game.intro();
+    State.busy=false;
+    Term.setPrompt(State.prompt()); Term.showInput(true); Line.clear();
+  }
+};
+
+async function submitLine(){
+  const text=Line.buf;
+  if(State.mode==="login"){
+    State.busy=true; Term.showInput(false);
+    const h=(text.trim()||"ghost").replace(/\s+/g,"_").slice(0,16);
+    State.user=h; $("#hud-user").textContent=h;
+    Term.echo($("#prompt").textContent, text); Line.clear();
+    await Term.print("handle accepted. welcome to the deck, "+h+".",{cls:"c-dim"});
+    await Term.print("returning operator? reload with 'resume <code>' using the note by your screen.",{cls:"c-dim"});
+    await Term.blank();
+    $("#hud").classList.add("live"); Trace.render();
+    CampaignManager.start();
+    return;
+  }
+  if(State.mode==="terminal"){
+    Term.echo(State.prompt(), text); Line.clear();
+    State.busy=true; Term.showInput(false);
+    await Commands.run(text);
+    State.busy=false;
+    if(State.mode==="terminal"){ Term.setPrompt(State.prompt()); Term.showInput(true); }
+  }
+}
+
+function onKey(e){
+  if(State.mode==="off"){ e.preventDefault(); Boot.powerOn(); return; }
+  if(State.mode==="boot"||State.mode==="end"){ return; }
+  if(State.mode==="puzzle"){
+    if(e.key==="Escape"){ e.preventDefault(); Puzzles.abort(); return; }
+    if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)||e.code==="Space"||e.key==="Backspace"||e.key==="Enter") e.preventDefault();
+    Puzzles.input(e); return;
+  }
+  if(State.mode==="menu"){
+    if(/^[1-9]$/.test(e.key)){ Audio.key(); CampaignManager.pickMenu(parseInt(e.key,10)); }
+    return;
+  }
+  // login / terminal line editing
+  if(State.busy) return;
+  if(e.key==="Enter"){ e.preventDefault(); submitLine(); return; }
+  if(e.key==="Backspace"){ e.preventDefault(); Audio.key(); Line.back(); return; }
+  if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey){ Audio.key(); Line.add(e.key); }
+}
+
+function init(){
+  window.addEventListener("keydown", onKey);
+  document.addEventListener("click", (e)=>{
+    if(State.mode==="off"){ Boot.powerOn(); }
+    if(Audio.init) Audio.init();
+  });
+  $("#mute").addEventListener("click",(e)=>{
+    e.stopPropagation();
+    const m=Audio.toggleMute();
+    e.currentTarget.classList.toggle("muted", m);
+    e.currentTarget.innerHTML = m ? "&#9834; OFF" : "&#9835; SND";
+  });
+  FX.init();
+  // initial power-off splash
+  Term.showInput(false);
+  Term.instant("",); 
+  Term.instant("        \u2588 CRT-80 INTRUSION DECK","c-dim");
+  Term.instant("",);
+  Term.instant("        press any key or click to power on","c-amber");
+  State.mode="off";
+}
+init();
+</script>
+</body>
+</html>

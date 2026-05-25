@@ -61,7 +61,7 @@ The final contract does not end on rails. Once you reach the core and hold the r
 
 The deck persists nothing between loads, so every contract has its own 4-digit continue code, shown on the yellow sticky note beside the screen. The note always displays the code for the contract you are currently on, and it updates as you advance.
 
-If you close the deck, or get knocked offline and want to step away, you can pick up later. Boot a fresh session, enter any handle, and type `resume <code>` (for example, `resume 1984`) to jump straight back to that contract. Loading a code starts that contract fresh, so you replay its puzzle but skip everything before it. An invalid code is rejected, and you cannot load a code while you are still connected to a node.
+If you close the deck, or get knocked offline and want to step away, you can pick up later. Boot a fresh session, enter any handle, and type `resume <code>` (for example, `resume 1984`) to jump straight back to that contract. Loading a code is a checkpoint. The deck restores the objective files from every earlier contract to your local archive, so you can reread the story so far with `ls` and `cat`, then it wipes your tool loadout and gives you 5 proof to re-equip at the `store` before you dial in. You still replay the resumed contract's puzzle from scratch. An invalid code is rejected, and you cannot load a code while you are still connected to a node.
 
 A campaign can define its own thematic codes in a `continueCodes` array. If it does not, the deck generates a stable code for each mission automatically.
 

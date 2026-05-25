@@ -1294,9 +1294,20 @@ Commands.register({name:"resume", aliases:["continue","code"], help:"reload a co
   const idx=Continue.decode(code);
   if(idx==null){ Audio.err(); await Term.print("invalid continue code. check the digits and retry.",{cls:"c-red"}); return; }
   if(idx===State.missionIndex){ await Term.print("that code is the contract you are already on.",{cls:"c-dim"}); Continue.show(idx); return; }
-  State.missionIndex=idx; State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.stash={};
+  State.missionIndex=idx; State.connectedTo=null; State.accessGranted=false; State.downloaded={};
+  // code-jump checkpoint: grant the earlier objective files, wipe the loadout, seed proof
+  State.stash={};
+  for(let i=0;i<idx;i++){
+    const pm=State.campaign.missions[i], tgt=State.campaign.targets[pm.targetId];
+    if(tgt && tgt.files[pm.objective]) State.stash[pm.objective]={ host:pm.targetId, file:tgt.files[pm.objective] };
+  }
+  State.tools={ scrubber:false, analyzer:false, failsafe:0 };
+  State.credits=5; $("#hud-proof").textContent=State.credits;
   Trace.reset(); Audio.ok();
   await Term.print("continue code accepted. restoring contract "+String(idx+1).padStart(2,"0")+".",{cls:"bright"});
+  const granted=Object.keys(State.stash).length;
+  if(granted) await Term.print("checkpoint :: "+granted+" earlier objective(s) restored to your deck archive ('ls').",{cls:"c-cyan"});
+  await Term.print("loadout reset. starting proof: 5. visit the 'store' before you dial in.",{cls:"c-dim"});
   await Term.blank();
   await Game.briefing();
 }});

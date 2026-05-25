@@ -576,6 +576,7 @@ const State = {
   connectedTo:null,     // target id currently connected
   accessGranted:false,  // puzzle solved on current target
   downloaded:{},        // objectiveFile -> true
+  stash:{},             // local archive: filename -> { host, file } for downloaded files
   credits:0,            // "proof" earned from contracts
   tools:{ scrubber:false, analyzer:false, failsafe:0 },   // loadout
   coverUses:0,          // 'cover' uses spent on current connection
@@ -969,8 +970,8 @@ const Game = {
     o.textContent=t; $("#objbar").classList.add("live");
   },
   resetStats(){ State.stats={ filesRead:0, nearMiss:false, puzzleFails:0 }; State.coverUses=0; },
-  async readFile(name){
-    const f=State.target.files[name];
+  async readFile(name, fileObj){
+    const f=fileObj || State.target.files[name];
     State.stats.filesRead++;
     await Term.blank();
     const body=Array.isArray(f.text)?f.text:[f.text];
@@ -1099,6 +1100,7 @@ const Game = {
     for(let i=0;i<=10;i++){ await Term.print("["+"#".repeat(i)+".".repeat(10-i)+"] "+(i*10)+"%",{cls:"c-dim",speed:4}); }
     Audio.ok();
     State.downloaded[file]=true;
+    State.stash[file]={ host:State.connectedTo, file:t.files[file] };   // keep a local copy on the deck
     if(file===m.objective){
       await Term.print("payload secured.",{cls:"bright"});
       if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(l,{cls:"c-handler"});
@@ -1224,25 +1226,39 @@ makeUnlockCmd("seq","defeat a sequence lock");
 makeUnlockCmd("route","route past a firewall");
 makeUnlockCmd("intercept","intercept a packet window");
 
-Commands.register({name:"ls", aliases:["dir"], help:"list files on connected node", run:async()=>{
-  if(!await needConn()) return;
-  const t=State.target;
-  for(const [name,f] of Object.entries(t.files)){
-    if(f.access==="deleted" && !State.tools.scrubber) continue;   // hidden until the scrubber recovers them
-    const locked=(f.access==="locked" && !State.accessGranted);
-    const tag = (f.access==="deleted") ? "[recvrd] " : (locked?"[locked] ":"         ");
-    await Term.print("  "+tag+name,{cls:locked?"c-faint":(f.access==="deleted"?"c-cyan":"c-dim")});
+Commands.register({name:"ls", aliases:["dir"], help:"list files on the node, or your downloads at the deck", run:async()=>{
+  if(connected()){
+    const t=State.target;
+    for(const [name,f] of Object.entries(t.files)){
+      if(f.access==="deleted" && !State.tools.scrubber) continue;   // hidden until the scrubber recovers them
+      const locked=(f.access==="locked" && !State.accessGranted);
+      const tag = (f.access==="deleted") ? "[recvrd] " : (locked?"[locked] ":"         ");
+      await Term.print("  "+tag+name,{cls:locked?"c-faint":(f.access==="deleted"?"c-cyan":"c-dim")});
+    }
+    return;
   }
+  // disconnected: show the local archive of everything exfiltrated this run
+  const names=Object.keys(State.stash);
+  if(!names.length){ await Term.print("no files on the deck yet. exfiltrate with 'download' while connected.",{cls:"c-dim"}); return; }
+  await Term.print("LOCAL ARCHIVE :: "+names.length+" file(s)",{cls:"c-cyan"});
+  for(const n of names) await Term.print("  "+n+"   (from "+State.stash[n].host+")",{cls:"c-dim"});
+  await Term.print("read with 'cat <file>'.",{cls:"c-faint"});
 }});
 
-Commands.register({name:"cat", aliases:["read","open","more"], help:"read a file  (cat <file>)", run:async(a)=>{
-  if(!await needConn()) return;
+Commands.register({name:"cat", aliases:["read","open","more"], help:"read a file on the node, or a downloaded file at the deck", run:async(a)=>{
   if(!a[0]){ await Term.print("usage: cat <file>",{cls:"c-amber"}); return; }
-  const t=State.target, f=t.files[a[0]];
-  if(!f){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
-  if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
-  if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: "+a[0],{cls:"c-red"}); Audio.err(); return; }
-  await Game.readFile(a[0]);
+  if(connected()){
+    const t=State.target, f=t.files[a[0]];
+    if(!f){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
+    if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
+    if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: "+a[0],{cls:"c-red"}); Audio.err(); return; }
+    await Game.readFile(a[0]);
+    return;
+  }
+  // disconnected: read from the local archive of downloaded files
+  const entry=State.stash[a[0]];
+  if(!entry){ await Term.print("no such file on the deck: "+a[0]+"   (try 'ls')",{cls:"c-red"}); return; }
+  await Game.readFile(a[0], entry.file);
 }});
 
 Commands.register({name:"download", aliases:["get","exfil"], help:"exfiltrate a file  (download <file>)", run:async(a)=>{
@@ -1262,6 +1278,7 @@ Commands.register({name:"status", aliases:["whoami","stat"], help:"show operator
   await Term.print("proof      "+State.credits,{cls:"c-dim"});
   const tools=[]; if(State.tools.scrubber) tools.push("scrubber"); if(State.tools.analyzer) tools.push("analyzer"); if(State.tools.failsafe) tools.push("failsafe x"+State.tools.failsafe);
   await Term.print("tools      "+(tools.length?tools.join(", "):"none"),{cls:"c-dim"});
+  await Term.print("archive    "+Object.keys(State.stash).length+" file(s) on the deck",{cls:"c-dim"});
 }});
 
 Commands.register({name:"contract", aliases:["contracts","mission","brief"], help:"reread current contract brief", run:async()=>{
@@ -1277,7 +1294,7 @@ Commands.register({name:"resume", aliases:["continue","code"], help:"reload a co
   const idx=Continue.decode(code);
   if(idx==null){ Audio.err(); await Term.print("invalid continue code. check the digits and retry.",{cls:"c-red"}); return; }
   if(idx===State.missionIndex){ await Term.print("that code is the contract you are already on.",{cls:"c-dim"}); Continue.show(idx); return; }
-  State.missionIndex=idx; State.connectedTo=null; State.accessGranted=false; State.downloaded={};
+  State.missionIndex=idx; State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.stash={};
   Trace.reset(); Audio.ok();
   await Term.print("continue code accepted. restoring contract "+String(idx+1).padStart(2,"0")+".",{cls:"bright"});
   await Term.blank();
@@ -1901,7 +1918,7 @@ function routeSolvable(spec){
 /* boot directly into a campaign (used by import + menu) */
 async function bootIntoCampaign(id){
   CampaignManager.load(id);
-  State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.filesSeen={};
+  State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.stash={}; State.filesSeen={};
   Trace.reset();
   await Term.clear();
   State.mode="terminal"; State.busy=true; Term.showInput(false);
@@ -1923,7 +1940,7 @@ async function tabComplete(){
   else {
     const cmd=parts[0].toLowerCase(); frag=parts[parts.length-1];
     const fileCmds=["cat","read","open","more","download","get","exfil"];
-    if(fileCmds.includes(cmd) && State.target) pool=Object.keys(State.target.files);
+    if(fileCmds.includes(cmd)) pool=State.target?Object.keys(State.target.files):Object.keys(State.stash);
     else if(cmd==="connect"||cmd==="dial"||cmd==="ssh"){ const m=State.mission; pool=m?[m.targetId]:[]; }
     else if(cmd==="buy") pool=SHOP.map(s=>s.key);
     else if(cmd==="man") pool=Commands.primary();

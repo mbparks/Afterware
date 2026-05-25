@@ -23,6 +23,8 @@ Each contract follows the same rhythm:
 5. `ls` and `cat <file>` to read the leaked documents, then `download <objective>` to exfiltrate the file the contract wants.
 6. `disconnect` to get out clean before the trace meter fills.
 
+Everything you download is kept on your deck. After you disconnect, `ls` lists your local archive and `cat <file>` rereads any file you have pulled, so the dossier you assemble stays with you for the whole run.
+
 Read the files. The story lives in them. The corporation's secret unspools document by document, and the ending reframes who your handler really is. STATIC reacts as you go, to a clean breach, to a near-miss with the trace, and to specific documents you open.
 
 Across the top of the screen, an objective line always shows your current step, so you never have to remember what comes next.
@@ -87,8 +89,8 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `seq` | | Defeat a sequence lock |
 | `route` | | Route past a firewall |
 | `intercept` | | Intercept a packet window |
-| `ls` | `dir` | List files on the connected node |
-| `cat <file>` | `read`, `open`, `more` | Read a file |
+| `ls` | `dir` | List files on the node, or your downloads at the deck |
+| `cat <file>` | `read`, `open`, `more` | Read a file on the node, or a downloaded file at the deck |
 | `download <file>` | `get`, `exfil` | Exfiltrate a file |
 | `cover` | `scrub`, `wipe` | Wipe logs to cut the trace (while connected) |
 | `disconnect` | `exit`, `logout`, `quit` | Close the current connection |

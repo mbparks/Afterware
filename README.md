@@ -65,11 +65,13 @@ If you close the deck, or get knocked offline and want to step away, you can pic
 
 A campaign can define its own thematic codes in a `continueCodes` array. If it does not, the deck generates a stable code for each mission automatically.
 
-## Choosing a campaign
+## The campaign library
 
-The deck ships with more than one campaign. If two or more are loaded, a selection screen appears right after boot: each is listed with a number and a one-line description, and you press the number to load it. With only one campaign loaded, the deck boots straight into it.
+The library is your home base. It opens right after you enter a handle, you return to it automatically when a campaign ends, and you can go back to it any time from the deck by typing `library`. It lists every campaign loaded on the deck, each with its title and a one-line description, plus an ADD A CAMPAIGN entry at the bottom.
 
-You can switch at any time from the deck (not while connected) with the `campaigns` command. Type `campaigns` to list what is loaded, or `campaigns <number>` to jump straight into one. Switching restarts that campaign from its first contract with a clean loadout. You can also add your own campaign by pasting it into the importer in `settings`, after which it joins the picker.
+From the library you press a number to play a campaign, or press A to add your own. Playing a campaign starts it from its first contract. Returning to the library and picking a different one switches stories, so note your continue code first if you want to come back to where you were.
+
+To add a campaign, press A in the library (or type `add-campaign` at the deck). That opens an importer where you paste a campaign pack, an object or JSON, and press LOAD PACK. The pack is validated before anything happens: a broken one is rejected with a list of reasons and nothing changes, and a valid one is added to your library, where it appears in the list ready to play. See `CAMPAIGN_AUTHORING.md` for how to write one.
 
 ## Settings
 
@@ -108,7 +110,8 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `contract` | `contracts`, `mission`, `brief` | Reread the current brief |
 | `resume <code>` | `continue`, `code` | Reload a contract from a 4-digit continue code |
 | `settings` | `config`, `options`, `prefs` | Open the deck settings panel |
-| `campaigns` | `sets` | List campaigns and switch (at the deck) |
+| `library` | `campaigns`, `menu`, `sets` | Open the campaign library to switch or add a campaign |
+| `add-campaign` | `import`, `add` | Paste your own campaign pack to add it |
 | `man <command>` | | Detailed help for a command |
 | `clear` | `cls` | Clear the screen |
 

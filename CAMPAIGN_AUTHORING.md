@@ -6,11 +6,11 @@ This guide covers the full schema, the built-in puzzles and their specs, the val
 
 ## The fastest path: paste and play
 
-1. Power on the deck and enter any handle.
-2. Type `settings` to open the panel.
-3. Paste your campaign object (or JSON) into the import box and click Load Pack.
+1. Power on the deck and enter any handle. You land in the campaign library.
+2. Press A (ADD A CAMPAIGN), or type `add-campaign` at the deck.
+3. Paste your campaign object (or JSON) into the box and press LOAD PACK.
 
-The deck validates the pack first. If anything is wrong it refuses to load and lists the reasons. If it passes, the deck boots straight into your story. The importer accepts either strict JSON or a plain JavaScript object literal, so trailing commas and unquoted keys are fine.
+The deck validates the pack first. If anything is wrong it refuses to add it and lists the reasons, leaving your library unchanged. If it passes, the pack is added to your library, where it appears in the list ready to play. The importer accepts either strict JSON or a plain JavaScript object literal, so trailing commas and unquoted keys are fine.
 
 To ship a campaign permanently instead, drop it into the source and register it:
 
@@ -18,7 +18,7 @@ To ship a campaign permanently instead, drop it into the source and register it:
 Campaigns.register(yourCampaign);
 ```
 
-If more than one campaign is registered, a selection menu appears at boot.
+If more than one campaign is registered, they all appear in the library, the selection hub shown after boot.
 
 ## Top-level schema
 

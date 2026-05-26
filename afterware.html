@@ -353,8 +353,8 @@ body.fx-min #cursor{animation:none;opacity:1;}
             <span class="sval"><button class="sbtn" id="music-btn">OFF</button></span>
             <span class="skey" style="width:auto;opacity:.6">pulsing synth while breached</span></div>
           <div class="srow" style="display:block">
-            <span class="skey">import campaign (paste JSON)</span>
-            <textarea id="imp-area" placeholder="paste a campaign object or JSON here, then Load"></textarea>
+            <span class="skey">add a campaign</span>
+            <textarea id="imp-area" placeholder="paste a campaign pack (object or JSON) here, then press LOAD PACK"></textarea>
             <button class="sbtn" id="imp-load" style="margin-top:6px">LOAD PACK</button>
             <div id="imp-msg"></div>
           </div>
@@ -1256,8 +1256,10 @@ const Game = {
     await Term.blank();
     await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
     await this.credits();
-    await Term.print("(refresh the page to run another contract.)",{cls:"c-dim"});
-    Term.showInput(false);
+    await Term.blank();
+    await Term.print("returning to the campaign library ...",{cls:"c-dim"});
+    await sleep(1400);
+    CampaignManager.openLibrary(false);
   }
 };
 Bus.on("system.caught", () => Game.caught());
@@ -1375,6 +1377,7 @@ Commands.register({name:"contract", aliases:["contracts","mission","brief"], hel
 }});
 
 Commands.register({name:"resume", aliases:["continue","code"], help:"reload a contract from a 4-digit continue code", run:async(a)=>{
+  if(!State.campaign){ await Term.print("pick a campaign from the library first, then use its continue code.",{cls:"c-amber"}); return; }
   if(connected()){ await Term.print("disconnect before loading a continue code.",{cls:"c-amber"}); return; }
   const code=(a[0]||"").trim();
   if(!/^\d{4}$/.test(code)){ await Term.print("continue codes are four digits. example: 'resume "+Continue.forMission(0)+"'.",{cls:"c-amber"}); return; }
@@ -2030,32 +2033,39 @@ Campaigns.register({
 });
 
 const CampaignManager = {
-  start(){
+  start(){ this.openLibrary(true); },
+  // the persistent home base. returns here after boot, after an ending, and on the 'library' command.
+  openLibrary(firstTime){
     const list=Campaigns.list();
-    if(list.length===1){ this.load(list[0].id); Boot.enter(); return; }
-    this.openMenu();
-  },
-  openMenu(){
-    const list=Campaigns.list();
-    State.mode="menu"; this._menu=list; Term.showInput(false);
+    this._menu=list;
+    State.mode="menu"; State.connectedTo=null; State.accessGranted=false;
+    Audio.arpStop(); Trace.stop(); Continue.hide();
+    $("#hud-node").textContent="library"; $("#objbar").classList.remove("live");
+    Term.clear();
     Term.instant("",);
-    Term.instant("SELECT A CAMPAIGN","c-cyan bright");
-    Term.instant("the deck holds more than one contract set. pick one to load.","c-dim");
+    Term.instant("\u2588 CAMPAIGN LIBRARY","c-cyan bright");
+    Term.instant(firstTime?"choose a story to run. each is a self-contained set of contracts."
+                          :"back at the library. choose another story, or add your own.","c-dim");
     Term.instant("",);
     list.forEach((c,i)=>{
-      Term.instant("  ["+(i+1)+"]  "+c.title, "bright");
-      if(c.blurb) Term.instant("       "+c.blurb, "c-faint");
+      const cur=(State.campaign && State.campaign.id===c.id)?"   (last played)":"";
+      Term.instant("  ["+(i+1)+"]  "+c.title+cur, "bright");
+      if(c.blurb) Term.instant("        "+c.blurb, "c-faint");
+      Term.instant("",);
     });
+    Term.instant("  [A]  + ADD A CAMPAIGN","c-amber");
+    Term.instant("        paste your own contract set (see CAMPAIGN_AUTHORING).","c-faint");
     Term.instant("",);
-    Term.instant("press a number to load. you can switch later with the 'campaigns' command.","c-amber");
+    Term.instant("press a number to play, or A to add. you can return here any time by typing 'library'.","c-amber");
   },
-  renderMenu(list){ this.openMenu(); },   // back-compat
+  openMenu(){ this.openLibrary(false); },   // back-compat alias
+  renderMenu(){ this.openLibrary(false); },
   pickMenu(n){
     const list=this._menu; if(!list||!list[n-1]) return;
     Audio.ok();
-    this.load(list[n-1].id);
     bootIntoCampaign(list[n-1].id);
   },
+  addFromLibrary(){ Audio.beep(); Settings.open(true); },   // open settings focused on import
   load(id){ State.campaign=Campaigns.get(id); State.missionIndex=0;
     const issues=Validator.check(State.campaign);
     if(issues.length){
@@ -2132,28 +2142,21 @@ Commands.register({name:"man", help:"detailed help for a command  (man <cmd>)",
 Commands.register({name:"settings", aliases:["config","options","prefs"], help:"open deck settings (volume, effects, theme, music, import)",
   run:async()=>{ Settings.open(); }});
 
-Commands.register({name:"campaigns", aliases:["campaign-select","sets"], help:"list campaigns and switch to another (at the deck)",
-  man:["shows every contract set loaded on the deck and lets you switch.",
-       "switching restarts from the first contract of that campaign with a clean loadout.",
-       "use 'campaigns' to list, or 'campaigns <number>' to jump straight in.",
-       "you cannot switch while connected; 'disconnect' first."],
-  run:async(a)=>{
-  if(connected()){ await Term.print("disconnect before switching campaigns.",{cls:"c-amber"}); return; }
-  const list=Campaigns.list();
-  if(list.length<2){ await Term.print("only one campaign is loaded. paste another via 'settings' to add more.",{cls:"c-dim"}); return; }
-  const pick=parseInt((a[0]||"").replace(/\D/g,""),10);
-  if(pick && list[pick-1]){
-    if(list[pick-1].id===State.campaign.id){ await Term.print("you are already running "+list[pick-1].title+".",{cls:"c-dim"}); return; }
-    await bootIntoCampaign(list[pick-1].id); return;
-  }
-  await Term.print("CAMPAIGNS ON THIS DECK",{cls:"c-cyan"});
-  list.forEach((c,i)=>{
-    const here=(c.id===State.campaign.id)?"  <-- current":"";
-    Term.print("  ["+(i+1)+"] "+c.title+here,{cls:here?"c-amber":"c-dim"});
-    if(c.blurb) Term.print("      "+c.blurb,{cls:"c-faint"});
-  });
-  await Term.print("switch with 'campaigns <number>'.",{cls:"c-dim"});
+Commands.register({name:"library", aliases:["campaigns","menu","sets"], help:"open the campaign library to switch or add a campaign",
+  man:["opens the campaign library, your home base for choosing and adding stories.",
+       "pick a number to play a campaign, or A to add your own by pasting a pack.",
+       "leaving the current campaign loses unsaved progress on it; note your continue code first.",
+       "you cannot open the library while connected; 'disconnect' first."],
+  run:async()=>{
+  if(connected()){ await Term.print("disconnect before opening the library.",{cls:"c-amber"}); return; }
+  CampaignManager.openLibrary(false);
 }});
+
+Commands.register({name:"add-campaign", aliases:["import","add"], help:"paste your own campaign pack to add it to the library",
+  man:["opens the importer so you can paste a campaign pack (object or JSON).",
+       "the pack is validated before it is added; a broken pack is rejected with reasons.",
+       "once added it appears in the library, where you can play it."],
+  run:async()=>{ Settings.open(true); }});
 
 /* ---- theme palettes (player-facing phosphor swap) ---- */
 const THEMES={
@@ -2190,15 +2193,22 @@ const Settings = {
     const thb=$("#theme-btn"); if(thb) thb.textContent=State.settings.theme.toUpperCase();
     const mb=$("#music-btn"); if(mb) mb.textContent=State.settings.music?"ON":"OFF";
   },
-  open(){
+  open(focusImport){
     if(!this._wired) this.wire();
-    this._prev = (State.mode==="login")?"login":"terminal";
+    this._prev = (State.mode==="login")?"login":(State.mode==="menu")?"menu":"terminal";
     State.mode="settings"; Term.showInput(false);
     $("#settings").classList.add("open");
     this.refresh();
+    const im=$("#imp-msg");
+    if(focusImport){
+      if(im){ im.textContent="paste a campaign pack below and press LOAD. it is checked before it runs."; im.className="c-cyan"; }
+      const area=$("#imp-area"); if(area && area.focus) try{ area.focus(); }catch(e){}
+      if(area && area.scrollIntoView) try{ area.scrollIntoView(); }catch(e){}
+    } else if(im){ im.textContent=""; im.className=""; }
   },
   close(){
     $("#settings").classList.remove("open");
+    if(this._prev==="menu"){ State.mode="menu"; CampaignManager.openLibrary(false); return; }
     State.mode=this._prev;
     if(State.mode==="terminal"){ Term.setPrompt(State.prompt()); Term.showInput(true); }
   },
@@ -2214,11 +2224,13 @@ const Settings = {
     try { obj = (new Function("return ("+raw+")"))(); }
     catch(e){ if(msg){msg.textContent="parse error: "+e.message; msg.className="failnote";} return; }
     const issues=Validator.check(obj);
-    if(issues.length){ if(msg){msg.innerHTML="rejected:<br>"+issues.map(x=>"&bull; "+x).join("<br>"); msg.className="failnote";} return; }
+    if(issues.length){ if(msg){msg.innerHTML="rejected, not loaded:<br>"+issues.map(x=>"&bull; "+x).join("<br>"); msg.className="failnote";} return; }
+    const fresh=!Campaigns.get(obj.id);
     Campaigns.register(obj);
-    if(msg){ msg.textContent="loaded '"+obj.title+"'. booting..."; msg.className="c-cyan"; }
-    this.close();
-    await bootIntoCampaign(obj.id);
+    if(area) area.value="";
+    if(msg){ msg.textContent=(fresh?"added":"updated")+" '"+obj.title+"'. it's now in your library."; msg.className="c-cyan"; }
+    this._prev="menu";          // send the player back to the library to see it listed
+    setTimeout(()=>this.close(), 900);
   },
   wire(){
     this._wired=true;
@@ -2412,7 +2424,8 @@ function onKey(e){
     Puzzles.input(e); return;
   }
   if(State.mode==="menu"){
-    if(/^[1-9]$/.test(e.key)){ Audio.key(); CampaignManager.pickMenu(parseInt(e.key,10)); }
+    if(/^[1-9]$/.test(e.key)){ Audio.key(); CampaignManager.pickMenu(parseInt(e.key,10)); return; }
+    if(e.key==="a"||e.key==="A"){ CampaignManager.addFromLibrary(); return; }
     return;
   }
   // login / terminal line editing

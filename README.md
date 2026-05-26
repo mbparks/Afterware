@@ -65,13 +65,20 @@ If you close the deck, or get knocked offline and want to step away, you can pic
 
 A campaign can define its own thematic codes in a `continueCodes` array. If it does not, the deck generates a stable code for each mission automatically.
 
+## Choosing a campaign
+
+The deck ships with more than one campaign. If two or more are loaded, a selection screen appears right after boot: each is listed with a number and a one-line description, and you press the number to load it. With only one campaign loaded, the deck boots straight into it.
+
+You can switch at any time from the deck (not while connected) with the `campaigns` command. Type `campaigns` to list what is loaded, or `campaigns <number>` to jump straight into one. Switching restarts that campaign from its first contract with a clean loadout. You can also add your own campaign by pasting it into the importer in `settings`, after which it joins the picker.
+
 ## Settings
 
 Type `settings` (or `config`, `options`, `prefs`) to open the deck settings panel. Click a control to change it, and press ESC to close.
 
 - **Volume**: a ten-segment level for all synthesized sound.
 - **Effects**: cycles full, reduced, and minimal. Reduced drops the flicker and grain. Minimal also removes scanlines and the curvature glow and stops the glitch animation. This is both polish and accessibility, since the full CRT effect set is intense.
-- **Phosphor**: cycles the screen tint between green, amber, and ice blue. This is the player-facing theme switch, separate from any per-campaign tint.
+- **Phosphor**: cycles the screen tint between green, amber, ice blue, and a hot-magenta neon. This is the player-facing theme switch, separate from any per-campaign tint.
+- **Arp bed**: toggles a pulsing synth arpeggio that rises while you are breached into a node and fades when you disconnect. Off by default, so the deck stays quiet unless you want the mood.
 - **Import campaign**: paste a campaign object or JSON into the box and click Load to boot straight into a story without touching the engine. The deck validates it first and refuses a broken pack with a list of reasons. See `CAMPAIGN_AUTHORING.md`.
 
 ## Commands
@@ -89,6 +96,7 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `seq` | | Defeat a sequence lock |
 | `route` | | Route past a firewall |
 | `intercept` | | Intercept a packet window |
+| `social` | | Talk your way past a person |
 | `ls` | `dir` | List files on the node, or your downloads at the deck |
 | `cat <file>` | `read`, `open`, `more` | Read a file on the node, or a downloaded file at the deck |
 | `download <file>` | `get`, `exfil` | Exfiltrate a file |
@@ -100,6 +108,7 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `contract` | `contracts`, `mission`, `brief` | Reread the current brief |
 | `resume <code>` | `continue`, `code` | Reload a contract from a 4-digit continue code |
 | `settings` | `config`, `options`, `prefs` | Open the deck settings panel |
+| `campaigns` | `sets` | List campaigns and switch (at the deck) |
 | `man <command>` | | Detailed help for a command |
 | `clear` | `cls` | Clear the screen |
 
@@ -114,6 +123,7 @@ Each contract is gated by one minigame. Press ESC at any time to abort a puzzle 
 - **seqlock** (`seq`): A memory lock. Watch the symbol sequence flash, then replay it with the arrow keys. Each round adds a symbol. Analyzer flashes the sequence more slowly.
 - **route** (`route`): A signal-routing maze. Move with the arrow keys from the source (S) to the sink (X) without entering a firewall cell. Analyzer faintly marks the shortest path.
 - **intercept** (`intercept`): A timing lock. A marker sweeps across a window. Press Space to lock it inside the green zone. The window shrinks and the marker speeds up each round. Analyzer widens the window.
+- **pretext** (`social`): A social-engineering dialogue. You read the mark's mood and pick the cover story that gets you past them. A wrong line is a nudge, not a failure: the mark gets warier and you try another angle, so it never hard-stops a reader.
 
 ## Campaign 01: THE VANTA FILES
 
@@ -124,6 +134,14 @@ Five escalating contracts against VANTA BIOSYSTEMS, whose public face is neural-
 3. **DEAD DROP** (`hr.vanta-int.net`, seq): open the HR vault, pull the volunteer roster, and read what a volunteer left behind.
 4. **WET WIRE** (`lab7.vanta-sec.net`, route): route past the research firewall and read the Continuity log.
 5. **THE CORE** (`core.vanta-blacksite`, intercept): reach the black-site core, pull the board minutes, and choose what happens next.
+
+## Campaign 02: SIGNAL DECAY
+
+A shorter, three-contract story in a different key. Decades ago a crew of idealists believed the wire could set people free. They lost. The corporation they fought became ARGUS, a surveillance giant, and one of their own built it. Your handler, CARRIER, is the last true believer of that crew, and they greet you by the handle you chose at boot. The campaign runs in a magenta neon tint and leans on the social-engineering puzzle and the Scrubber's file-recovery to surface the crew's history.
+
+1. **DIAL TONE** (`vms.argus-legacy.net`, social): talk your way past the helpdesk on a forgotten phone switch and pull an old directory.
+2. **THE OLD CREW** (`hr.argus-corp.net`, decrypt): break the personnel vault and learn what happened to the crew, and which of them sold the rest.
+3. **PANOPTICON** (`core.argus-panopticon`, intercept): reach the surveillance core, take the watch ledger, and decide whether to close the eyes alone, walk away, or wake the scattered old underground and take ARGUS together.
 
 ## Architecture
 
@@ -224,7 +242,7 @@ Tunable constants live in the `CONFIG` block at the top of the script:
 - `traceWarnAt`, `traceCritAt`: the percentages where the caution and critical accents kick in.
 - `charset`: the glyph set used by the password puzzle.
 
-The look is driven by CSS variables in the `:root` block. The player can switch the screen tint between green, amber, and ice blue from the settings panel. A campaign can still set a default tint per story with `themeOverrides`, a map of CSS variable names and values that the campaign manager applies on load.
+The look is driven by CSS variables in the `:root` block. The player can switch the screen tint between green, amber, ice blue, and neon from the settings panel. A campaign can still set a default tint per story with `themeOverrides`, a map of CSS variable names and values that the campaign manager applies on load.
 
 ## Technical notes
 

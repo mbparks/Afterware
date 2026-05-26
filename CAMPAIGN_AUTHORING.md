@@ -26,6 +26,7 @@ If more than one campaign is registered, a selection menu appears at boot.
 {
   id,                  // required, unique string, used internally
   title,               // required, shown on screen
+  blurb,               // optional one-line description shown in the campaign picker
   themeOverrides,      // optional map of CSS variable -> value (a default tint)
   continueCodes,       // optional array of one 4-digit string per mission
 
@@ -54,6 +55,8 @@ If more than one campaign is registered, a selection menu appears at boot.
 Notes:
 
 - A line that begins with the handler name (for example `STATIC:: ...`) is rendered in the handler color. Everything else uses the default phosphor color.
+- Any line spoken by the handler (the intro, quips, mission beats, file reactions, the finale prompt, and endings) may contain the token `{handle}`, which the engine replaces with the handle the player typed at boot. This is how a campaign greets the player by name and makes the handler feel like they know who they recruited. Use it sparingly so it lands.
+- `blurb` is shown under the title in the campaign picker when more than one campaign is loaded. Keep it to one line: genre, hook, and contract count works well.
 - Do not use em dashes in any on-screen text. Use commas, periods, or parentheses.
 - The handler is addressed by name, so keep `handler.name` short.
 
@@ -119,10 +122,34 @@ All puzzle specs are optional unless noted. The Signal Analyzer tool adds one hi
 | `seqlock` | `seq` | `rounds` (array), `title` | a memory sequence per round, for example `[4, 5, 6]` |
 | `route` | `route` | `w`, `h`, `walls`, `src`, `sink`, `title` | a maze; omit to use the default solvable maze |
 | `intercept` | `intercept` | `rounds` (number), `title` | a timing lock with this many rounds |
+| `pretext` | `social` | `mark`, `rounds`, `title` | a social-engineering dialogue; pick the right cover story |
 
 For `route`, if you supply explicit `walls`, the validator runs a breadth-first search and rejects the campaign if the maze is unsolvable. `walls`, `src`, and `sink` are `[row, col]` pairs. The default grid is 7 wide by 6 tall.
 
 For `decrypt`, the `plain` text is the answer the player rotates the channel to reveal. Keep it uppercase letters and spaces.
+
+For `pretext`, the social-engineering puzzle, you describe a person (the `mark`) and a series of conversational beats. Each round shows the mark's mood and a set of lines the player can try, and the player presses the number of the line they want. The right line advances; a wrong line is a nudge, not a failure, so the puzzle never hard-stops a reader. If you supply no `rounds`, a built-in two-round script is used. The shape is:
+
+```js
+puzzleId: "pretext",
+unlockCmd: "social",
+puzzleSpec: {
+  title: "PRETEXT :: FRONT DESK",
+  mark: "a bored receptionist, late Friday",
+  rounds: [
+    {
+      ask: "the line is flat, going through the motions.",
+      options: [
+        { text: "Sound like IT doing a routine reset.", ok: true,  reply: "'oh, finally. extension 4417.'" },
+        { text: "Demand a supervisor.",                  ok: false, reply: "that just wakes them up." }
+      ]
+    }
+    // ...more rounds
+  ]
+}
+```
+
+Each option has `text` (what the player sees), `ok` (whether it advances), and `reply` (the mark's response, shown either way). Solving the last round opens the node.
 
 To add your own puzzle, register a factory and reference its id from a mission. See the README section on adding a puzzle.
 

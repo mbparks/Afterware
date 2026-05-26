@@ -349,6 +349,9 @@ body.fx-min #cursor{animation:none;opacity:1;}
           <div class="srow"><span class="skey">phosphor</span>
             <span class="sval"><button class="sbtn" id="theme-btn">GREEN</button></span>
             <span class="skey" style="width:auto;opacity:.6">screen tint</span></div>
+          <div class="srow"><span class="skey">arp bed</span>
+            <span class="sval"><button class="sbtn" id="music-btn">OFF</button></span>
+            <span class="skey" style="width:auto;opacity:.6">pulsing synth while breached</span></div>
           <div class="srow" style="display:block">
             <span class="skey">import campaign (paste JSON)</span>
             <textarea id="imp-area" placeholder="paste a campaign object or JSON here, then Load"></textarea>
@@ -437,6 +440,7 @@ const pick = arr => arr[rand(arr.length)];
 /* Synthesized only - mechanical keys, beeps, modem warble, hum bed, alarm.   */
 const Audio = (() => {
   let ctx=null, master=null, hum=null, humGain=null, muted=false, started=false, volume=0.7;
+  let arpTimer=null, arpGain=null, arpStep=0, music=false;
   function ac(){ if(!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); master=ctx.createGain(); master.gain.value=volume; master.connect(ctx.destination); } return ctx; }
   function ensure(){ if(ctx && ctx.state==="suspended") ctx.resume(); }
   function blip(freq, dur, type="square", vol=0.06){
@@ -489,7 +493,33 @@ const Audio = (() => {
     toggleMute(){ muted=!muted; if(muted) this.humStop(); else this.humStart(); return muted; },
     isMuted(){ return muted; },
     setVolume(v){ volume=Math.max(0,Math.min(1,v)); if(master) master.gain.value=volume; },
-    getVolume(){ return volume; }
+    getVolume(){ return volume; },
+    setMusic(on){ music=!!on; if(!music) this.arpStop(); },
+    getMusic(){ return music; },
+    arpStart(){
+      if(!music || muted || arpTimer) return;
+      const c=ac(); ensure();
+      if(!arpGain){ arpGain=c.createGain(); arpGain.gain.value=0.0; arpGain.connect(master); }
+      arpGain.gain.setValueAtTime(0.0, c.currentTime);
+      arpGain.gain.linearRampToValueAtTime(0.5, c.currentTime+1.2);
+      // a brooding minor-ninth arpeggio: the rave pulse aged into something wistful
+      const seq=[110,164.81,220,261.63,329.63,261.63,220,164.81];
+      arpStep=0;
+      arpTimer=setInterval(()=>{
+        if(muted) return;
+        const f=seq[arpStep%seq.length];
+        const o=c.createOscillator(), g=c.createGain();
+        o.type="triangle"; o.frequency.value=f;
+        o.connect(g); g.connect(arpGain);
+        const t=c.currentTime;
+        g.gain.setValueAtTime(0,t);
+        g.gain.linearRampToValueAtTime(0.05,t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t+0.34);
+        o.start(t); o.stop(t+0.36);
+        arpStep++;
+      },220);
+    },
+    arpStop(){ if(arpTimer){ clearInterval(arpTimer); arpTimer=null; } if(arpGain){ try{ arpGain.gain.setTargetAtTime(0,ac().currentTime,0.2); }catch(e){} } }
   };
 })();
 
@@ -585,7 +615,7 @@ const State = {
   history:[],           // command history
   histIdx:0,
   choice:null,          // pending finale choice key
-  settings:{ volume:0.7, fx:"full", theme:"green" },
+  settings:{ volume:0.7, fx:"full", theme:"green", music:false },
   get mission(){ return this.campaign ? this.campaign.missions[this.missionIndex] : null; },
   get target(){ return this.connectedTo ? this.campaign.targets[this.connectedTo] : null; },
   prompt(){
@@ -903,6 +933,61 @@ Puzzles.register("intercept", (spec, api) => {
   };
 });
 
+/* ---- PUZZLE: pretext  (social engineering, story-forward, cannot hard-fail) ----
+   spec: { title, mark, rounds:[ { ask, options:[ {text, ok, reply} ] } ] }
+   You read the mark's guard, then pick the line that gets you past it. A wrong
+   pick is a nudge, not a loss: the mark gets warier and you try a different angle.
+   Falls back to a built-in script if a campaign supplies no rounds.            */
+Puzzles.register("pretext", (spec, api) => {
+  const mark = spec.mark || "the front desk";
+  const rounds = (spec.rounds && spec.rounds.length) ? spec.rounds : [
+    { ask:"the voice on the line is bored, going through motions.",
+      options:[
+        { text:"Demand to speak to a supervisor immediately.", ok:false, reply:"that just wakes them up. they ask for YOUR name." },
+        { text:"Sound bored too. 'Hi, it's IT, resetting your VLAN, can you confirm the ext?'", ok:true, reply:"'oh, finally. it's been slow all day. extension 4417.'" },
+        { text:"Say nothing and breathe.", ok:false, reply:"'...hello? is someone there?' click." }
+      ]},
+    { ask:"now they want a name to log the ticket against.",
+      options:[
+        { text:"Give the name you read in the staff directory earlier.", ok:true, reply:"'great, i'll note it. what do you need me to click?'" },
+        { text:"Make up a name on the spot.", ok:false, reply:"'that's not anyone here.' the warmth drains out of their voice." }
+      ]}
+  ];
+  let idx=0;
+  const markEl=el("div"); markEl.innerHTML="<span class='c-dim'>MARK</span> "+mark;
+  const askEl=el("div","c-amber");
+  const opts=el("div");
+  const log=el("div","c-faint");
+  api.body.append(markEl, el("div","",""), askEl, el("div","",""), opts, el("div","",""), log);
+  function render(){
+    const r=rounds[idx];
+    askEl.textContent=r.ask;
+    opts.innerHTML="";
+    r.options.forEach((o,i)=> opts.appendChild(el("div","", "  ["+(i+1)+"] "+o.text)));
+  }
+  render();
+  api.foot("press the number of the line you want to try  |  ESC to back out");
+  return {
+    onInput(e){
+      const r=rounds[idx];
+      if(!/^[1-9]$/.test(e.key)) return;
+      const choice=r.options[parseInt(e.key,10)-1];
+      if(!choice) return;
+      if(choice.ok){
+        Audio.ok();
+        log.textContent="\u2192 "+choice.reply;
+        idx++;
+        if(idx>=rounds.length){ setTimeout(()=>api.solve(),650); }
+        else { setTimeout(render,650); }
+      } else {
+        Audio.err(); api.bump(2);
+        log.textContent="\u2192 "+choice.reply+"  (try another angle.)";
+      }
+    },
+    teardown(){}
+  };
+});
+
 /* ============================== [CMD] =====================================
    Command registry. Add a command = register one object; no parser edits.
    { name, aliases?, help, hidden?, run(args) }   help is auto-generated.
@@ -981,7 +1066,7 @@ const Game = {
       for(const l of f.recover) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"c-cyan",speed:7});
     }
     await Term.blank();
-    if(f.react && !State.filesSeen[name]) await Term.print(State.campaign.handler.name+":: "+f.react,{cls:"c-handler"});
+    if(f.react && !State.filesSeen[name]) await Term.print(State.campaign.handler.name+":: "+this.fmt(f.react),{cls:"c-handler"});
     State.filesSeen[name]=true;
   },
   async cover(){
@@ -1005,7 +1090,7 @@ const Game = {
   async offerChoice(){
     const fin=State.campaign.finale; Trace.stop();
     await Term.blank();
-    for(const l of fin.prompt) await Term.print(l,{cls:"c-handler"});
+    for(const l of fin.prompt) await Term.print(this.fmt(l),{cls:"c-handler"});
     fin.options.forEach((o,i)=> Term.print("  ["+(i+1)+"] "+o.label,{cls:"c-cyan"}));
     await Term.print("press a number to decide.",{cls:"c-amber"});
     State.mode="choice"; State.choice=null; Term.showInput(false);
@@ -1025,10 +1110,11 @@ const Game = {
       "no mind was truly lost. they were only running.","","thank you for playing."];
     for(const l of cr) await Term.print(l,{cls:l==="AFTERWARE"?"bright":"c-dim",speed:16});
   },
+  fmt(s){ return String(s).replace(/\{handle\}/g, State.user); },
   async intro(){
     const c=State.campaign;
-    await Term.print(c.handler.name+":: "+c.handler.intro[0],{cls:"c-handler"});
-    for(let i=1;i<c.handler.intro.length;i++) await Term.print("   "+c.handler.intro[i],{cls:"c-handler"});
+    await Term.print(c.handler.name+":: "+this.fmt(c.handler.intro[0]),{cls:"c-handler"});
+    for(let i=1;i<c.handler.intro.length;i++) await Term.print("   "+this.fmt(c.handler.intro[i]),{cls:"c-handler"});
     await Term.blank();
     await this.briefing();
   },
@@ -1069,7 +1155,7 @@ const Game = {
     await Term.print(t.banner,{cls:"bright"});
     if(t.motd) for(const l of t.motd) await Term.print("  "+l,{cls:"c-faint"});
     if(State.stats && Trace.value>0) await Term.print("warning: you are already flagged. this session starts hot.",{cls:"c-amber"});
-    if(m.beats.onConnect) for(const l of m.beats.onConnect) await Term.print(l,{cls:"c-handler"});
+    if(m.beats.onConnect) for(const l of m.beats.onConnect) await Term.print(this.fmt(l),{cls:"c-handler"});
     if(State.tools.scrubber && Object.values(t.files).some(f=>f.access==="deleted"||f.recover))
       await Term.print("log scrubber online :: deleted entries are recoverable here. check 'ls'.",{cls:"c-cyan"});
     await Term.print("trace active. recon with 'probe'.",{cls:"c-amber"});
@@ -1078,14 +1164,15 @@ const Game = {
   async grantAccess(){
     State.busy=true;                       // freeze heat during the breach beat
     State.accessGranted=true;
+    Audio.arpStart();                      // the pulse rises once you're inside
     Bus.emit("system.breached");
     Trace.start(State.mission.traceRate);  // heat resumes once you act again
     Trace.bump(-35);                        // breaching buys you breathing room
     const m=State.mission;
     await Term.print("ACCESS GRANTED :: subsystem unlocked.",{cls:"bright"});
-    if(m.beats.onAccess) for(const l of m.beats.onAccess) await Term.print(l,{cls:"c-handler"});
+    if(m.beats.onAccess) for(const l of m.beats.onAccess) await Term.print(this.fmt(l),{cls:"c-handler"});
     if(State.stats.puzzleFails===0 && !State.stats.nearMiss && State.campaign.handler.quips && State.campaign.handler.quips.clean)
-      await Term.print(State.campaign.handler.name+":: "+State.campaign.handler.quips.clean,{cls:"c-handler"});
+      await Term.print(State.campaign.handler.name+":: "+this.fmt(State.campaign.handler.quips.clean),{cls:"c-handler"});
     await Term.print("data store readable. 'ls' to list, 'download "+m.objective+"' to exfil.",{cls:"c-dim"});
     State.busy=false;
     this.updateObj();
@@ -1103,7 +1190,7 @@ const Game = {
     State.stash[file]={ host:State.connectedTo, file:t.files[file] };   // keep a local copy on the deck
     if(file===m.objective){
       await Term.print("payload secured.",{cls:"bright"});
-      if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(l,{cls:"c-handler"});
+      if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(this.fmt(l),{cls:"c-handler"});
       if(State.missionIndex===State.campaign.missions.length-1 && State.campaign.finale){
         await this.offerChoice(); return;
       }
@@ -1115,7 +1202,7 @@ const Game = {
     if(!connected()){ await Term.print("not connected.",{cls:"c-dim"}); return; }
     const m=State.mission; const host=State.connectedTo;
     Trace.stop();
-    State.connectedTo=null; State.accessGranted=false;
+    State.connectedTo=null; State.accessGranted=false; Audio.arpStop();
     $("#hud-node").textContent="offline";
     await Term.print("link to "+host+" closed.",{cls:"c-dim"});
     Trace.reset();
@@ -1129,7 +1216,7 @@ const Game = {
     await Term.blank();
     await Term.print("CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" COMPLETE.  +"+proof+" proof  (balance "+State.credits+")",{cls:"bright"});
     if(State.stats.nearMiss && c.handler.quips && c.handler.quips.nearmiss)
-      await Term.print(c.handler.name+":: "+c.handler.quips.nearmiss,{cls:"c-handler"});
+      await Term.print(c.handler.name+":: "+this.fmt(c.handler.quips.nearmiss),{cls:"c-handler"});
     if(State.missionIndex>=c.missions.length-1){ await this.ending(); return; }
     await Term.print("spend proof at the 'store' before the next contract.",{cls:"c-dim"});
     State.missionIndex++;
@@ -1145,7 +1232,7 @@ const Game = {
       await Term.print(State.campaign.handler.name+":: bought you one breath. now MOVE.",{cls:"c-handler"});
       return;
     }
-    State.connectedTo=null; State.accessGranted=false;
+    State.connectedTo=null; State.accessGranted=false; Audio.arpStop();
     $("#hud-node").textContent="offline";
     await Term.print("!! CONNECTION TRACED !! emergency disconnect from "+host,{cls:"c-red"});
     Trace.reset();
@@ -1165,7 +1252,7 @@ const Game = {
     let lines;
     if(choiceKey && c.endings && c.endings[choiceKey]) lines=c.endings[choiceKey];
     else lines = c.ending || (c.endings && c.endings[Object.keys(c.endings)[0]]) || [];
-    for(const l of lines) await Term.print(l, {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
+    for(const l of lines) await Term.print(this.fmt(l), {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
     await Term.blank();
     await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
     await this.credits();
@@ -1350,6 +1437,7 @@ const Campaigns = (() => {
 Campaigns.register({
   id:"vanta",
   title:"THE VANTA FILES",
+  blurb:"horror. a wellness-implant giant is hiding what it does to the dead. 5 contracts.",
   continueCodes:["0451","1984","2049","1138","9000"],
   handler:{
     name:"STATIC",
@@ -1721,21 +1809,252 @@ Campaigns.register({
   ]
 });
 
+/* ===================== [CONTENT] Campaign 02: SIGNAL DECAY =================
+   A homage to mid-90s hacker-movie idealism, decades soured. Original work:
+   no lifted names, slogans, or manifesto text. The crew who once believed the
+   wire could set people free are old now, and the corporation they fought
+   became the surveillance state they feared. Showcases the pretext puzzle, an
+   off-screen crew surfaced through recovered logs, a handler who greets you by
+   handle, and a finale that lets you raise the old underground.            */
+Campaigns.register({
+  id:"signal",
+  title:"SIGNAL DECAY",
+  blurb:"a soured-idealism homage. the crew that wanted to free the wire got old; the corp won. 3 contracts.",
+  continueCodes:["1995","2600","8088"],
+  themeOverrides:{ "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 2px rgba(255,150,235,.6),0 0 8px rgba(120,230,255,.30)" },
+  handler:{
+    name:"CARRIER",
+    intro:[
+      "so you're {handle}. i've been reading your traffic for a week. you're sloppy, but you're brave.",
+      "that's the same mix we all had, back when we thought a modem could change the world.",
+      "we were kids. we shouted that information wanted to be free. then the grown-ups monetized the shout.",
+      "the company is ARGUS now. they watch everything. and one of us built them the eyes.",
+      "i am too old and too logged to do this myself. so i found you. pick a handle worth remembering, and dial in."
+    ],
+    quips:{
+      clean:"clean. you move like someone who learned on a slow line. that's a compliment, {handle}.",
+      nearmiss:"that ran hot. i have buried friends who ran that hot. ease off."
+    }
+  },
+  missions:[
+    {
+      codename:"DIAL TONE",
+      briefing:[
+        "ARGUS still runs a legacy voice system from the old days. nobody guards a phone switch anymore.",
+        "talk your way in. there's a directory in there with a name i need you to see."
+      ],
+      targetId:"vms.argus-legacy.net", traceRate:1,
+      unlockCmd:"social", puzzleId:"pretext",
+      puzzleSpec:{ title:"PRETEXT :: ARGUS HELPDESK", mark:"ARGUS helpdesk, after lunch" },
+      objective:"old_directory.txt",
+      decoys:[
+        { host:"fax.argus-legacy.net", note:"(still spooling, 1997)", honeypot:false },
+        { host:"conf-bridge.argus-legacy.net", note:"(open conference line? listen at your peril)", honeypot:true }
+      ],
+      beats:{
+        onConnect:["CARRIER:: a dial tone. god, that sound. that's the sound of when we were dangerous."],
+        onAccess:["CARRIER:: you're in on charm alone. the others would have liked you, {handle}."],
+        onDownload:["CARRIER:: read the directory. you'll find a handle you don't expect, listed as staff."]
+      }
+    },
+    {
+      codename:"THE OLD CREW",
+      briefing:[
+        "the name in that directory belongs to one of us. NIGHTJAR. the best i ever flew with.",
+        "ARGUS has a personnel archive. decrypt it. i need to know what they did to the crew, and what the crew did for them."
+      ],
+      targetId:"hr.argus-corp.net", traceRate:2,
+      unlockCmd:"decrypt", puzzleId:"decrypt",
+      puzzleSpec:{ plain:"WE WERE NEVER CAUGHT WE WERE BOUGHT", title:"CHANNEL :: ARGUS-HR" },
+      objective:"crew_disposition.eml",
+      decoys:[
+        { host:"badge.argus-corp.net", note:"(door system, needs a token)", honeypot:false },
+        { host:"intern-vpn.argus-corp.net", note:"(wide open, freshly provisioned)", honeypot:true }
+      ],
+      beats:{
+        onConnect:["CARRIER:: this is the part i could not do. i did not want to know."],
+        onAccess:["CARRIER:: read it. all of it. find out which of us sold the rest."],
+        onDownload:["CARRIER:: NIGHTJAR. of course it was NIGHTJAR. the one who said freedom was a phase."]
+      }
+    },
+    {
+      codename:"PANOPTICON",
+      briefing:[
+        "ARGUS core. the room NIGHTJAR built. every camera, every badge, every search, funneled to one ledger.",
+        "intercept the feed and reach the kill switch. then decide what an old promise is still worth."
+      ],
+      targetId:"core.argus-panopticon", traceRate:3,
+      unlockCmd:"intercept", puzzleId:"intercept", puzzleSpec:{ rounds:3, title:"FEED :: ARGUS-CORE" },
+      objective:"watch_ledger.db",
+      decoys:[
+        { host:"press.argus-panopticon", note:"(public relations mirror)", honeypot:false },
+        { host:"failover.argus-panopticon", note:"(unguarded hot spare? at the core?)", honeypot:true }
+      ],
+      beats:{
+        onConnect:["CARRIER:: i can hear the old carrier under their traffic. like a heartbeat we never turned off."],
+        onAccess:["CARRIER:: the ledger, and the switch. this is the part only you can choose, {handle}."],
+        onDownload:["CARRIER:: it's in your hands now. mine are too old and the others are scattered. unless..."]
+      }
+    }
+  ],
+  targets:{
+    "vms.argus-legacy.net":{
+      banner:"ARGUS LEGACY VOICE // PBX // 'your call is important'",
+      motd:[
+        "system date reads 1997. nobody ever fixed it. nobody ever looks.",
+        "press 0 for an operator. the operator is one bored human and a long afternoon."
+      ],
+      services:["voicemail store","staff dial-by-name","23/telnet maint (legacy)"],
+      locked:"dial-by-name directory behind the operator",
+      files:{
+        "greeting.vox":{access:"open",text:[
+          "[outgoing message, recorded a long time ago]",
+          "'you've reached ARGUS. we're building a safer tomorrow, together.'",
+          "// the voice is young and certain. it has no idea what it is helping build."]},
+        "old_directory.txt":{access:"locked",text:[
+          "ARGUS legacy dial-by-name (partial)",
+          "ext 4417  helpdesk (you, just now)",
+          "ext 1010  security architecture .... handle on file: NIGHTJAR",
+          "ext 0000  founder's office (number disconnected)",
+          "// a handwritten note scanned into the record: 'he kept his old handle as a vanity line. arrogant. useful.'"],
+          react:"NIGHTJAR, listed as staff. as ARGUS. i hoped the directory was lying. it does not lie.",
+          recover:[
+            "// deleted voicemail, recovered:",
+            "'it's me. it's been twenty years. i know you can still hear these.",
+            " i did not forget the crew. i just decided we were wrong. come work for me. -N'"]}
+      }
+    },
+    "hr.argus-corp.net":{
+      banner:"ARGUS CORP // personnel // [ access logged ]",
+      motd:[
+        "our people are our perimeter.",
+        "voluntary departures are processed by the security architecture group."
+      ],
+      services:["389/ldap directory","636/ldaps personnel-vault","443/https hr-portal"],
+      locked:"personnel vault, channel-ciphered",
+      files:{
+        "org.txt":{access:"open",text:[
+          "ARGUS CORP. founded on a settlement, built on a grudge.",
+          "Security Architecture reports directly to the founder.",
+          "// the rest of the org chart is one name, repeated, with more authority each line."]},
+        "crew_disposition.eml":{access:"locked",text:[
+          "FROM: Security Architecture (NIGHTJAR)   TO: founder, eyes only",
+          "RE: the old associates. final disposition.",
+          "",
+          "You asked what to do about the people i used to run with. Here it is, plainly.",
+          "BYTEWELL: took the settlement, signed the silence, drinks now. harmless.",
+          "SLOWHAND: would not sign. discredited through a leak we authored. also harmless.",
+          "CARRIER: the believer. still out there, still recruiting children to a dead cause.",
+          "Recommendation: do not pursue CARRIER directly. let the years do it.",
+          "",
+          "We were never caught. That is the part the children get wrong. We were bought.",
+          "I simply named the highest price, which was all of it.",
+          "// the others wanted to free the wire. i wanted to own the part everyone walks through."],
+          react:"there it is. NIGHTJAR did not lose the faith. NIGHTJAR sold it, itemized, with my name in the footnotes.",
+          recover:[
+            "// a draft NIGHTJAR never sent, recovered from the vault shadow:",
+            "'CARRIER, if you ever read this the way you read everything: i am not sorry, but i am tired.",
+            " the switch is real. it is at the core. i left it reachable. do with that what your conscience can afford.'"]}
+      }
+    },
+    "core.argus-panopticon":{
+      banner:"## ARGUS PANOPTICON CORE ## every wire reports here",
+      motd:[
+        "you are observed. that sentence is the entire product.",
+        "legacy carrier tone detected on the backplane. flagged decades ago. never removed."
+      ],
+      services:["feed-aggregator (sweeping)","badge-master","ledger-master","-- KILL SWITCH (reachable?)"],
+      locked:"aggregated feed, packet-windowed",
+      files:{
+        "watch_ledger.db":{access:"locked",text:[
+          "ARGUS WATCH LEDGER :: live",
+          "subjects under continuous observation: everyone with a number.",
+          "retention: forever. deletion: not implemented, by design.",
+          "the ledger does not store crimes. it stores the option to find one later.",
+          "// query log shows one internal user reads their own crew's old file, monthly, and changes nothing."],
+          react:"NIGHTJAR checks on us. monthly. like visiting graves it dug and keeps tidy.",
+          recover:[
+            "// recovered from the switch firmware, signed NIGHTJAR:",
+            "'i built the eyes. i could not bring myself to weld the lid shut.",
+            " someone braver than me gets the last word. i hope they are kinder than i was.'"]},
+        "killswitch.bin":{access:"locked",text:[
+          "FEED KILL SWITCH :: ARMED",
+          "Effect on trip: the aggregator goes dark. the ledger stops growing. the eyes close.",
+          "ARGUS can rebuild it. but not the trust, and not quickly.",
+          "There is a second option in the firmware: a broadcast primitive.",
+          "It can wake every dormant node that ever carried the old tone. all of them. at once."]}
+      }
+    }
+  },
+  finale:{
+    prompt:[
+      "CARRIER:: the switch is real, {handle}. NIGHTJAR left it reachable, which is the closest thing to an apology a coward sends.",
+      "CARRIER:: you can close the eyes alone tonight. or you can do the thing we never dared: send the old tone, and let me make some calls.",
+      "CARRIER:: thirty years of scattered signal, all waking at once. choose."
+    ],
+    options:[
+      { key:"rally", label:"send the broadcast -- wake the old underground and take ARGUS together" },
+      { key:"solo",  label:"trip the switch yourself -- quiet, clean, just you" },
+      { key:"walk",  label:"pocket the ledger -- leave the eyes open and disappear" }
+    ]
+  },
+  endings:{
+    rally:[
+      "you send the tone. across dead nodes and forgotten lines, a sound nobody has heard in decades.",
+      "CARRIER:: ...they're answering. {handle}, they're all answering. BYTEWELL just came up on a relay i buried in 2003.",
+      "ARGUS's feed does not go dark. it goes loud, swarmed from ten thousand directions it stopped watching for.",
+      "CARRIER:: we said it as kids and it was a joke and it was true. the wire was never theirs. listen to it.",
+      "somewhere NIGHTJAR watches the ledger fill with nothing but the old crew's handles, and finally turns the screen off.",
+      "-- SIGNAL DECAY :: the tone is still going. that was always the point. --"
+    ],
+    solo:[
+      "you trip the switch. the aggregator falls silent. the eyes close, one camera at a time.",
+      "CARRIER:: clean. quiet. nobody will ever know it was you. that was always your gift and your loneliness.",
+      "CARRIER:: NIGHTJAR will rebuild it. people like that always do. but you bought the world one dark night.",
+      "you keep the old directory. one line in it, ext 1010, a handle that used to mean something.",
+      "-- SIGNAL DECAY :: one light, switched off, by one hand. --"
+    ],
+    walk:[
+      "you copy the ledger and close the link. the eyes stay open. they do not even notice you leave.",
+      "CARRIER:: ...i understand. it is a lot to ask a stranger to carry an old crew's regret.",
+      "CARRIER:: keep the ledger somewhere safe. or sell it. you earned the choice we never gave the world.",
+      "CARRIER:: i'll keep dialing. there is always another brave, sloppy kid on a slow line.",
+      "you tell yourself you'll send the tone someday. the modem light blinks once, patient, and waits.",
+      "-- SIGNAL DECAY :: the eyes are still open. so is the offer. --"
+    ]
+  },
+  ending:[
+    "CARRIER:: it's done, {handle}. the eyes are closing.",
+    "CARRIER:: we said the wire was never theirs. tonight you proved it."
+  ]
+});
+
 const CampaignManager = {
   start(){
     const list=Campaigns.list();
     if(list.length===1){ this.load(list[0].id); Boot.enter(); return; }
-    State.mode="menu"; this.renderMenu(list);
+    this.openMenu();
   },
-  renderMenu(list){
-    Term.print("SELECT CONTRACT CAMPAIGN",{cls:"c-cyan"});
-    list.forEach((c,i)=> Term.print("  ["+(i+1)+"] "+c.title,{cls:"c-dim"}));
-    Term.print("press a number to load.",{cls:"c-amber"});
-    this._menu=list;
+  openMenu(){
+    const list=Campaigns.list();
+    State.mode="menu"; this._menu=list; Term.showInput(false);
+    Term.instant("",);
+    Term.instant("SELECT A CAMPAIGN","c-cyan bright");
+    Term.instant("the deck holds more than one contract set. pick one to load.","c-dim");
+    Term.instant("",);
+    list.forEach((c,i)=>{
+      Term.instant("  ["+(i+1)+"]  "+c.title, "bright");
+      if(c.blurb) Term.instant("       "+c.blurb, "c-faint");
+    });
+    Term.instant("",);
+    Term.instant("press a number to load. you can switch later with the 'campaigns' command.","c-amber");
   },
+  renderMenu(list){ this.openMenu(); },   // back-compat
   pickMenu(n){
     const list=this._menu; if(!list||!list[n-1]) return;
-    this.load(list[n-1].id); Term.clear(); Boot.enter();
+    Audio.ok();
+    this.load(list[n-1].id);
+    bootIntoCampaign(list[n-1].id);
   },
   load(id){ State.campaign=Campaigns.get(id); State.missionIndex=0;
     const issues=Validator.check(State.campaign);
@@ -1744,7 +2063,10 @@ const CampaignManager = {
       Term.instant("CAMPAIGN VALIDATOR :: "+issues.length+" issue(s) in '"+id+"' (see console)","c-amber");
       for(const x of issues.slice(0,6)) Term.instant("  ! "+x,"c-red");
     }
-    if(State.campaign.themeOverrides){ for(const [k,v] of Object.entries(State.campaign.themeOverrides)) document.documentElement.style.setProperty(k,v); }
+    // apply this campaign's default tint, unless the player chose their own
+    if(State.campaign.themeOverrides && State.settings.theme==="green"){
+      for(const [k,v] of Object.entries(State.campaign.themeOverrides)) document.documentElement.style.setProperty(k,v);
+    }
   }
 };
 
@@ -1807,17 +2129,41 @@ Commands.register({name:"man", help:"detailed help for a command  (man <cmd>)",
   for(const l of (Array.isArray(text)?text:[text])) await Term.print("  "+l,{cls:"c-dim"});
 }});
 
-Commands.register({name:"settings", aliases:["config","options","prefs"], help:"open deck settings (volume, effects, theme, import)",
+Commands.register({name:"settings", aliases:["config","options","prefs"], help:"open deck settings (volume, effects, theme, music, import)",
   run:async()=>{ Settings.open(); }});
+
+Commands.register({name:"campaigns", aliases:["campaign-select","sets"], help:"list campaigns and switch to another (at the deck)",
+  man:["shows every contract set loaded on the deck and lets you switch.",
+       "switching restarts from the first contract of that campaign with a clean loadout.",
+       "use 'campaigns' to list, or 'campaigns <number>' to jump straight in.",
+       "you cannot switch while connected; 'disconnect' first."],
+  run:async(a)=>{
+  if(connected()){ await Term.print("disconnect before switching campaigns.",{cls:"c-amber"}); return; }
+  const list=Campaigns.list();
+  if(list.length<2){ await Term.print("only one campaign is loaded. paste another via 'settings' to add more.",{cls:"c-dim"}); return; }
+  const pick=parseInt((a[0]||"").replace(/\D/g,""),10);
+  if(pick && list[pick-1]){
+    if(list[pick-1].id===State.campaign.id){ await Term.print("you are already running "+list[pick-1].title+".",{cls:"c-dim"}); return; }
+    await bootIntoCampaign(list[pick-1].id); return;
+  }
+  await Term.print("CAMPAIGNS ON THIS DECK",{cls:"c-cyan"});
+  list.forEach((c,i)=>{
+    const here=(c.id===State.campaign.id)?"  <-- current":"";
+    Term.print("  ["+(i+1)+"] "+c.title+here,{cls:here?"c-amber":"c-dim"});
+    if(c.blurb) Term.print("      "+c.blurb,{cls:"c-faint"});
+  });
+  await Term.print("switch with 'campaigns <number>'.",{cls:"c-dim"});
+}});
 
 /* ---- theme palettes (player-facing phosphor swap) ---- */
 const THEMES={
   green:{ "--phosphor":"#33ff66","--phosphor-dim":"#1c7a38","--phosphor-faint":"#0e3d1d","--glow":"0 0 2px rgba(120,255,160,.55),0 0 7px rgba(60,255,120,.30)" },
   amber:{ "--phosphor":"#ffb000","--phosphor-dim":"#9a6a05","--phosphor-faint":"#3e2c00","--glow":"0 0 2px rgba(255,205,120,.55),0 0 7px rgba(255,170,60,.30)" },
-  ice:{   "--phosphor":"#7fd9ff","--phosphor-dim":"#2f7da0","--phosphor-faint":"#123442","--glow":"0 0 2px rgba(160,225,255,.55),0 0 7px rgba(80,200,255,.30)" }
+  ice:{   "--phosphor":"#7fd9ff","--phosphor-dim":"#2f7da0","--phosphor-faint":"#123442","--glow":"0 0 2px rgba(160,225,255,.55),0 0 7px rgba(80,200,255,.30)" },
+  neon:{  "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 2px rgba(255,150,235,.6),0 0 8px rgba(120,230,255,.30)" }
 };
 const FX_LEVELS=["full","reduced","minimal"];
-const THEME_KEYS=["green","amber","ice"];
+const THEME_KEYS=["green","amber","ice","neon"];
 
 /* ---- Settings / import panel ---- */
 const Settings = {
@@ -1825,6 +2171,7 @@ const Settings = {
   apply(){
     const s=State.settings;
     Audio.setVolume(s.volume);
+    Audio.setMusic(s.music);
     document.body.classList.remove("fx-reduced","fx-min");
     if(s.fx==="reduced") document.body.classList.add("fx-reduced");
     else if(s.fx==="minimal") document.body.classList.add("fx-min");
@@ -1841,6 +2188,7 @@ const Settings = {
     this.renderVol();
     const fxb=$("#fx-btn"); if(fxb) fxb.textContent=State.settings.fx.toUpperCase();
     const thb=$("#theme-btn"); if(thb) thb.textContent=State.settings.theme.toUpperCase();
+    const mb=$("#music-btn"); if(mb) mb.textContent=State.settings.music?"ON":"OFF";
   },
   open(){
     if(!this._wired) this.wire();
@@ -1856,6 +2204,7 @@ const Settings = {
   },
   cycleFx(){ const i=FX_LEVELS.indexOf(State.settings.fx); State.settings.fx=FX_LEVELS[(i+1)%FX_LEVELS.length]; this.apply(); this.refresh(); },
   cycleTheme(){ const i=THEME_KEYS.indexOf(State.settings.theme); State.settings.theme=THEME_KEYS[(i+1)%THEME_KEYS.length]; this.apply(); this.refresh(); },
+  toggleMusic(){ State.settings.music=!State.settings.music; this.apply(); this.refresh(); if(State.settings.music && State.accessGranted) Audio.arpStart(); Audio.beep(); },
   vol(d){ State.settings.volume=Math.max(0,Math.min(1,Math.round((State.settings.volume+d)*10)/10)); this.apply(); this.renderVol(); Audio.beep(); },
   async importPack(){
     const area=$("#imp-area"), msg=$("#imp-msg");
@@ -1876,6 +2225,7 @@ const Settings = {
     const on=(id,fn)=>{ const e=$(id); if(e) e.addEventListener("click",(ev)=>{ev.stopPropagation();fn();}); };
     on("#vol-down",()=>this.vol(-0.1)); on("#vol-up",()=>this.vol(0.1));
     on("#fx-btn",()=>this.cycleFx()); on("#theme-btn",()=>this.cycleTheme());
+    on("#music-btn",()=>this.toggleMusic());
     on("#imp-load",()=>this.importPack());
   }
 };
@@ -1930,6 +2280,10 @@ function routeSolvable(spec){
 async function bootIntoCampaign(id){
   CampaignManager.load(id);
   State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.stash={}; State.filesSeen={};
+  State.missionIndex=0; State.credits=0; State.tools={ scrubber:false, analyzer:false, failsafe:0 };
+  State.history=[]; State.histIdx=0; State.choice=null;
+  $("#hud-proof").textContent=State.credits;
+  Audio.arpStop();
   Trace.reset();
   await Term.clear();
   State.mode="terminal"; State.busy=true; Term.showInput(false);

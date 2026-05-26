@@ -10,14 +10,14 @@
    ============================================================ */
 :root{
   --bg:#020603;
-  --phosphor:#33ff66;
-  --phosphor-dim:#1c7a38;
-  --phosphor-faint:#0e3d1d;
+  --phosphor:#5cff86;
+  --phosphor-dim:#2aa14a;
+  --phosphor-faint:#11491f;
   /* faint, phosphor-believable alert accents */
   --alert-red:#ff5a52;
   --alert-amber:#ffb454;
   --alert-cyan:#5fe6ff;
-  --glow:0 0 2px rgba(120,255,160,.55), 0 0 7px rgba(60,255,120,.30);
+  --glow:0 0 1px rgba(150,255,180,.5), 0 0 4px rgba(90,255,134,.18);
   --type-speed:14ms;
   --mono:"Courier New",ui-monospace,"Cascadia Mono","Consolas","Menlo",monospace;
 }
@@ -114,11 +114,11 @@ body{
 /* line color classes (multi-color alert accents) */
 .c-dim{color:var(--phosphor-dim);}
 .c-faint{color:var(--phosphor-faint);}
-.c-red{color:var(--alert-red);text-shadow:0 0 6px rgba(255,90,82,.6);}
-.c-amber{color:var(--alert-amber);text-shadow:0 0 6px rgba(255,180,84,.5);}
-.c-cyan{color:var(--alert-cyan);text-shadow:0 0 6px rgba(95,230,255,.55);}
-.c-handler{color:var(--alert-cyan);text-shadow:0 0 7px rgba(95,230,255,.5);}
-.bright{color:#d8ffe6;text-shadow:0 0 8px rgba(160,255,190,.8);}
+.c-red{color:var(--alert-red);text-shadow:0 0 2px rgba(255,90,82,.45);}
+.c-amber{color:var(--alert-amber);text-shadow:0 0 2px rgba(255,180,84,.4);}
+.c-cyan{color:var(--alert-cyan);text-shadow:0 0 2px rgba(95,230,255,.45);}
+.c-handler{color:var(--alert-cyan);text-shadow:0 0 2px rgba(95,230,255,.45);}
+.bright{color:#eafff0;text-shadow:0 0 3px rgba(160,255,190,.55);}
 
 /* ---- CRT effect overlays (non-interactive) ---- */
 #scanlines,#vignette,#flicker,#refresh,#grain{
@@ -126,9 +126,9 @@ body{
 }
 #scanlines{
   background:repeating-linear-gradient(
-    to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
-    rgba(0,0,0,.30) 3px, rgba(0,0,0,.30) 4px);
-  mix-blend-mode:multiply;opacity:.7;
+    to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 3px,
+    rgba(0,0,0,.16) 4px, rgba(0,0,0,.16) 5px);
+  mix-blend-mode:multiply;opacity:.5;
 }
 #vignette{
   border-radius:42px/30px;
@@ -138,8 +138,8 @@ body{
 }
 #flicker{background:rgba(80,255,140,.012);animation:flick 5.5s steps(60) infinite;}
 @keyframes flick{
-  0%,100%{opacity:.18;}10%{opacity:.10;}23%{opacity:.24;}
-  37%{opacity:.12;}54%{opacity:.22;}71%{opacity:.10;}88%{opacity:.20;}
+  0%,100%{opacity:.10;}10%{opacity:.06;}23%{opacity:.13;}
+  37%{opacity:.07;}54%{opacity:.12;}71%{opacity:.06;}88%{opacity:.11;}
 }
 #refresh{
   background:linear-gradient(to bottom, rgba(255,255,255,0) 0%,
@@ -197,7 +197,7 @@ body{
 #puzzle.open{display:flex;}
 #puzzle .ptitle{font-size:13px;letter-spacing:2px;text-transform:uppercase;
   color:var(--alert-cyan);border-bottom:1px solid var(--phosphor-faint);
-  padding-bottom:8px;margin-bottom:14px;text-shadow:0 0 7px rgba(95,230,255,.5);}
+  padding-bottom:8px;margin-bottom:14px;text-shadow:0 0 2px rgba(95,230,255,.45);}
 #puzzle .pbody{flex:1;overflow:auto;font-size:15px;line-height:1.5;}
 #puzzle .pfoot{font-size:12px;color:var(--phosphor-dim);margin-top:12px;
   border-top:1px solid var(--phosphor-faint);padding-top:8px;letter-spacing:.5px;}
@@ -286,7 +286,7 @@ body.fx-min #cursor{animation:none;opacity:1;}
 #settings.open{display:flex;}
 #settings .stitle{font-size:13px;letter-spacing:2px;text-transform:uppercase;
   color:var(--alert-cyan);border-bottom:1px solid var(--phosphor-faint);
-  padding-bottom:8px;margin-bottom:16px;text-shadow:0 0 7px rgba(95,230,255,.5);}
+  padding-bottom:8px;margin-bottom:16px;text-shadow:0 0 2px rgba(95,230,255,.45);}
 #settings .sbody{flex:1;overflow:auto;}
 #settings .srow{display:flex;align-items:center;gap:14px;margin:14px 0;}
 #settings .skey{width:150px;color:var(--phosphor-dim);text-transform:uppercase;font-size:12px;letter-spacing:1px;}
@@ -1314,6 +1314,7 @@ makeUnlockCmd("decrypt","break an encrypted channel");
 makeUnlockCmd("seq","defeat a sequence lock");
 makeUnlockCmd("route","route past a firewall");
 makeUnlockCmd("intercept","intercept a packet window");
+makeUnlockCmd("social","talk your way past a person");
 
 Commands.register({name:"ls", aliases:["dir"], help:"list files on the node, or your downloads at the deck", run:async()=>{
   if(connected()){
@@ -1824,7 +1825,7 @@ Campaigns.register({
   title:"SIGNAL DECAY",
   blurb:"a soured-idealism homage. the crew that wanted to free the wire got old; the corp won. 3 contracts.",
   continueCodes:["1995","2600","8088"],
-  themeOverrides:{ "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 2px rgba(255,150,235,.6),0 0 8px rgba(120,230,255,.30)" },
+  themeOverrides:{ "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 1px rgba(255,150,235,.5)" },
   handler:{
     name:"CARRIER",
     intro:[
@@ -2160,10 +2161,10 @@ Commands.register({name:"add-campaign", aliases:["import","add"], help:"paste yo
 
 /* ---- theme palettes (player-facing phosphor swap) ---- */
 const THEMES={
-  green:{ "--phosphor":"#33ff66","--phosphor-dim":"#1c7a38","--phosphor-faint":"#0e3d1d","--glow":"0 0 2px rgba(120,255,160,.55),0 0 7px rgba(60,255,120,.30)" },
-  amber:{ "--phosphor":"#ffb000","--phosphor-dim":"#9a6a05","--phosphor-faint":"#3e2c00","--glow":"0 0 2px rgba(255,205,120,.55),0 0 7px rgba(255,170,60,.30)" },
-  ice:{   "--phosphor":"#7fd9ff","--phosphor-dim":"#2f7da0","--phosphor-faint":"#123442","--glow":"0 0 2px rgba(160,225,255,.55),0 0 7px rgba(80,200,255,.30)" },
-  neon:{  "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 2px rgba(255,150,235,.6),0 0 8px rgba(120,230,255,.30)" }
+  green:{ "--phosphor":"#5cff86","--phosphor-dim":"#2aa14a","--phosphor-faint":"#11491f","--glow":"0 0 1px rgba(150,255,180,.5),0 0 4px rgba(90,255,134,.18)" },
+  amber:{ "--phosphor":"#ffb000","--phosphor-dim":"#9a6a05","--phosphor-faint":"#3e2c00","--glow":"0 0 1px rgba(255,205,120,.45)" },
+  ice:{   "--phosphor":"#7fd9ff","--phosphor-dim":"#2f7da0","--phosphor-faint":"#123442","--glow":"0 0 1px rgba(160,225,255,.45)" },
+  neon:{  "--phosphor":"#ff4fd8","--phosphor-dim":"#9a2f86","--phosphor-faint":"#3c1336","--glow":"0 0 1px rgba(255,150,235,.5)" }
 };
 const FX_LEVELS=["full","reduced","minimal"];
 const THEME_KEYS=["green","amber","ice","neon"];
@@ -2262,6 +2263,7 @@ const Validator = {
       const tag="mission "+(i+1)+" ("+(m.codename||"?")+"): ";
       if(!Puzzles.has(m.puzzleId)) errs.push(tag+"unknown puzzleId '"+m.puzzleId+"'.");
       if(!m.unlockCmd) errs.push(tag+"missing unlockCmd.");
+      else if(typeof Commands!=="undefined" && Commands.get && !Commands.get(m.unlockCmd)) errs.push(tag+"unlockCmd '"+m.unlockCmd+"' is not a registered command.");
       const t=c.targets&&c.targets[m.targetId];
       if(!t){ errs.push(tag+"targetId '"+m.targetId+"' not in targets."); return; }
       if(!t.files||!t.files[m.objective]) errs.push(tag+"objective '"+m.objective+"' not a file on "+m.targetId+".");

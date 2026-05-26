@@ -79,11 +79,12 @@ Notes:
     onConnect,
     onAccess,
     onDownload
-  }
+  },
+  decision             // optional, a mid-mission branching choice (see Branching)
 }
 ```
 
-- `unlockCmd` should match the puzzle. The built-in verbs are `crack`, `decrypt`, `seq`, `route`, and `intercept`.
+- `unlockCmd` should match the puzzle. The built-in verbs are `crack`, `decrypt`, `seq`, `route`, `intercept`, and `social`.
 - `objective` must be a file that exists on the mission's target.
 - Decoys are flavor hosts. A decoy with `honeypot: true` is bait. Connecting to it does not grant access, it flags the operator, and the next real connection starts with the trace already partway up. Give honeypots inviting notes and harmless ones mundane notes.
 
@@ -100,7 +101,10 @@ Notes:
       access,          // "open", "locked", or "deleted"
       text,            // a string or an array of lines
       recover,         // optional array of extra lines, revealed on read only if the player owns the Trace Scrubber
-      react            // optional handler line spoken the first time the file is read
+      react,           // optional handler line spoken the first time the file is read
+      kind,            // optional "text" (default), "image", or "audio" (usually inferred from the extension)
+      image,           // optional image spec for an image file (see Media files)
+      audio            // optional audio spec for an audio file (see Media files)
     }
   }
 }
@@ -110,6 +114,120 @@ Notes:
 - `react` is the cheapest way to make the handler feel present. Attach one to the documents that matter, and the handler comments the first time the player opens each.
 - Use `access` to control visibility. `open` files are always readable. `locked` files need a granted breach (the mission's puzzle solved). `deleted` files are hidden from `ls`, `cat`, and `download` entirely until the player owns the Trace Scrubber, at which point they surface in `ls` tagged `[recvrd]` and become readable. This is a clean way to reward the Scrubber with bonus story rather than mechanics.
 - `recover` is the lighter version of the same idea. Put extra lines on any normal file, and they are appended as a recovered fragment when the file is read, but only if the player owns the Scrubber. Good for slipping an unredacted line into an otherwise visible document.
+
+### Media files (images and audio)
+
+A file can be an image or an audio recording instead of plain text. Nothing is bundled as a binary: images are drawn as phosphor graphics on the CRT and audio is synthesized in the engine, so the game stays a single self-contained file. The kind is inferred from the extension (`.jpg`, `.png`, `.img` are images; `.wav`, `.aud`, `.vox`, `.rec` with an `audio` spec are audio) or set explicitly with `kind`. Opening a media file (`cat`, `open`, `view`, or `play`) shows it in a viewer; press ESC or ENTER to close. Media files list with an `[img]` or `[aud]` tag, archive on download like any file, and re-open from the deck. Their `react` still fires after viewing.
+
+An image file carries an `image` spec. Either describe a generated photo, or embed a real one as a data URI:
+
+```js
+"gate_cam.jpg": {
+  access: "locked",
+  image: {
+    subject: "figure",       // figure | face | document | map | object
+    treatment: "noisy",      // clean | noisy | redacted | thermal | corrupted
+    redactions: 2,           // optional, number of black bars
+    timestamp: "14:03 TUE",  // optional, burned into the corner
+    caption: "perimeter camera still, the hour the town went blank.",
+    seed: "gate-cam"         // optional, keeps the generated grain stable
+    // dataUri: "data:image/png;base64,...."   // optional: embed a real image instead
+  },
+  text: ["short caption shown if no image.caption is given"],
+  react: "the handler's reaction after the player sees it"
+}
+```
+
+Generated images render in the current phosphor tint with scanlines, so they fit the CRT. An embedded `dataUri` is tinted to match. Keep data URIs small, they live in the file.
+
+An audio file carries an `audio` spec. The engine plays a synthesized recording and shows an animated waveform:
+
+```js
+"intercept.wav": {
+  access: "locked",
+  audio: {
+    form: "transmission",    // transmission | tone | beacon | numbers | heartbeat
+    seconds: 6,              // 1 to 12
+    caption: "mostly static. under it, a slow count in a voice that does not breathe."
+  },
+  text: ["transcript or caption shown in the viewer"],
+  react: "play it again if you can stand to."
+}
+```
+
+Use `caption` for the in-viewer description and `react` for the handler's response. THE ASHFALL FILE includes both: a surveillance still on the station and an intercepted transmission in the archive.
+
+## Branching: choices that change the story (CYOA)
+
+A campaign can let the player's mid-mission choices reshape later contracts and the ending. It works through flags: a decision sets a flag, and later content reads it. Nothing here is required, so a linear campaign simply omits all of it.
+
+### Decisions
+
+Attach a `decision` to a mission. It fires at a hook (`access` when the node is breached, or `download`, the default, once the objective is taken) and pauses for the player to choose. Each option can set flags and print a reply.
+
+```js
+decision: {
+  at: "download",        // "access" or "download" (default "download")
+  once: true,            // optional: only fire once even if revisited
+  prompt: [ ...lines ],  // spoken by the handler, supports conditional lines (below)
+  options: [
+    {
+      key: "tell",                       // identifier for this choice
+      label: "loop the agents in now",   // shown to the player
+      sets: { agents: "informed" },      // flags to set
+      reply: [ ...lines ]                // printed after the player chooses
+    },
+    { key: "shield", label: "keep them in the dark", sets: { agents: "dark" }, reply: [ ... ] }
+  ]
+}
+```
+
+The trace meter freezes during a decision, since the player is reading, not idling. Flags persist for the rest of the run and are saved with progress. A continue-code jump resets flags (it is a clean checkpoint); continuing a saved run restores them.
+
+### Conditional lines
+
+Anywhere the handler speaks (mission `beats`, decision `prompt` and `reply`, the `finale.prompt`, and `endings`), a line may be a plain string or a conditional object. Conditional lines appear only when a flag matches:
+
+```js
+onConnect: [
+  "GUNMEN:: a morgue server. badly secured, probably.",
+  { if: "agents", eq: "informed", line: "GUNMEN:: the doctor agent left you a back door here." },
+  { unless: "agents", eq: "informed", line: "GUNMEN:: no help inside this time. you chose it that way." }
+]
+```
+
+`if` shows the line when the flag equals `eq` (which defaults to `true`). `unless` shows it when the flag does not equal `eq`. Use `line` for one line or `lines` for several. All such lines are still run through `{handle}` substitution.
+
+### Gated files
+
+A file can carry a `requires` so it only appears once a choice has been made. Until the flag matches, it is hidden from `ls`, `cat`, `download`, and tab completion, exactly like an unrecovered deleted file.
+
+```js
+"evidence_locker.trail": {
+  access: "locked",
+  requires: { flag: "implant", eq: "secured" },   // only if the player secured the evidence
+  text: [ ... ],
+  react: "this is the proof you took a risk for."
+}
+```
+
+### Gated and bonus finale options
+
+Finale options also accept `requires`. An option whose flag does not match is simply not offered, which lets a path the player earned unlock an ending the cautious player never sees. Every option key (gated or not) must still have a matching entry in `endings`.
+
+```js
+finale: {
+  prompt: [ "...", { if:"tech", eq:"saved", line:"you have a living witness." } ],
+  options: [
+    { key:"publish", label:"go loud" },
+    { key:"testify", label:"go public with your witness", requires:{ flag:"tech", eq:"saved" } },
+    { key:"burn",    label:"erase it and vanish" }
+  ]
+},
+endings: { publish:[...], testify:[...], burn:[...] }
+```
+
+THE ASHFALL FILE is the worked example of all of this: three decisions across its first three contracts, conditional beats that acknowledge them, one choice-gated evidence file, and a finale whose options and endings shift with what the player did.
 
 ## Built-in puzzles and their specs
 

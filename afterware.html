@@ -306,6 +306,35 @@ body.fx-min #cursor{animation:none;opacity:1;}
   resize:none;margin-top:6px;}
 #imp-msg{font-size:12px;margin-top:6px;min-height:16px;}
 
+/* ---- media viewer (image / audio files) ---- */
+#viewer{
+  position:absolute; inset:0; z-index:38; display:none;
+  background:rgba(2,8,4,.95); padding:26px 34px; flex-direction:column;
+  color:var(--phosphor); text-shadow:var(--glow);
+}
+#viewer.open{display:flex;}
+#viewer .vtitle{font-size:12px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--alert-cyan);border-bottom:1px solid var(--phosphor-faint);
+  padding-bottom:8px;margin-bottom:14px;text-shadow:0 0 2px rgba(95,230,255,.45);}
+#viewer .vstage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;}
+#viewer .vframe{
+  position:relative; border:1px solid var(--phosphor-dim); padding:6px; background:#02100a;
+  max-width:560px; max-height:78%;
+}
+#viewer .vframe svg, #viewer .vframe img{display:block;max-width:100%;max-height:60vh;}
+#viewer .vframe img{ filter:grayscale(1) sepia(1) hue-rotate(60deg) saturate(2) brightness(.9); opacity:.92; }
+#viewer .vscan{position:absolute;inset:6px;pointer-events:none;
+  background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 3px 4px);
+  mix-blend-mode:multiply;}
+#viewer .vcap{margin-top:12px;font-size:12px;color:var(--phosphor-dim);text-align:center;max-width:560px;}
+#viewer .vfoot{border-top:1px solid var(--phosphor-faint);padding-top:10px;margin-top:12px;
+  font-size:12px;color:var(--phosphor-dim);letter-spacing:.5px;text-align:center;}
+/* audio waveform */
+#viewer .wave{display:flex;align-items:flex-end;gap:2px;height:120px;width:520px;max-width:90%;}
+#viewer .wave i{flex:1;background:var(--phosphor-dim);min-height:2px;transition:background .1s;}
+#viewer .wave i.lit{background:var(--phosphor);box-shadow:0 0 6px rgba(120,255,160,.4);}
+#viewer .playhead{font-size:11px;color:var(--alert-cyan);margin-top:8px;letter-spacing:1px;}
+
 /* ---- ASCII logo ---- */
 .logo-line{white-space:pre;font-size:13px;line-height:1.05;}
 @media (max-width:760px){ .logo-line{font-size:9px;} }
@@ -360,6 +389,12 @@ body.fx-min #cursor{animation:none;opacity:1;}
           </div>
         </div>
         <div class="sfoot">click a control to change it &nbsp; | &nbsp; [ESC] close</div>
+      </div>
+      <div id="viewer">
+        <div class="vtitle" id="viewer-title">file viewer</div>
+        <div class="vstage" id="viewer-stage"></div>
+        <div class="vcap" id="viewer-cap"></div>
+        <div class="vfoot">[ESC] or [ENTER] close</div>
       </div>
       <div id="scanlines"></div>
       <div id="refresh"></div>
@@ -468,6 +503,35 @@ const Audio = (() => {
     n.connect(f); f.connect(g); g.connect(master);
     n.start(); n.stop(c.currentTime+dur);
   }
+  // play a synthesized "recording" for media files; returns a stop() handle
+  function playMedia(spec){
+    const c=ac(); ensure();
+    const form=(spec&&spec.form)||"transmission";
+    const seconds=Math.max(1,Math.min(12,(spec&&spec.seconds)||5));
+    const timers=[]; let stopped=false;
+    const at=(ms,fn)=>{ timers.push(setTimeout(()=>{ if(!stopped) fn(); }, ms)); };
+    if(form==="transmission"){
+      // bursts of static with intermittent voice-like tones: a garbled intercept
+      for(let t=0;t<seconds*1000;t+=Math.round(180+Math.random()*220)){
+        at(t, ()=>{ noise(0.12,0.04,500+Math.random()*900); if(Math.random()<0.5) blip(180+Math.random()*500,0.1,"sawtooth",0.03); });
+      }
+    } else if(form==="tone" || form==="hum"){
+      // a low sustained dread tone
+      if(!muted){ const o=c.createOscillator(), g=c.createGain(); o.type="sine"; o.frequency.value=(spec&&spec.freq)||110;
+        o.connect(g); g.connect(master); g.gain.value=0; g.gain.linearRampToValueAtTime(0.06,c.currentTime+0.4);
+        g.gain.setTargetAtTime(0,c.currentTime+seconds-0.4,0.25); o.start(); o.stop(c.currentTime+seconds);
+      }
+      for(let t=300;t<seconds*1000;t+=900) at(t,()=>noise(0.06,0.015,300));
+    } else if(form==="beacon" || form==="numbers"){
+      // a number-station style beep sequence
+      let t=0; while(t<seconds*1000){ const f=400+Math.round(Math.random()*6)*120; at(t,()=>blip(f,0.18,"square",0.05)); t+=Math.round(380+Math.random()*160); }
+    } else if(form==="heartbeat"){
+      for(let t=0;t<seconds*1000;t+=820){ at(t,()=>blip(70,0.16,"sine",0.07)); at(t+170,()=>blip(60,0.13,"sine",0.05)); }
+    } else {
+      for(let t=0;t<seconds*1000;t+=240) at(t,()=>noise(0.1,0.03,700));
+    }
+    return { stop(){ stopped=true; timers.forEach(clearTimeout); }, seconds };
+  }
   return {
     init(){ if(started) return; started=true; ac(); },
     key(){ blip(60+rand(40), 0.025, "square", 0.035); noise(0.02,0.02,1800); },
@@ -519,7 +583,8 @@ const Audio = (() => {
         arpStep++;
       },220);
     },
-    arpStop(){ if(arpTimer){ clearInterval(arpTimer); arpTimer=null; } if(arpGain){ try{ arpGain.gain.setTargetAtTime(0,ac().currentTime,0.2); }catch(e){} } }
+    arpStop(){ if(arpTimer){ clearInterval(arpTimer); arpTimer=null; } if(arpGain){ try{ arpGain.gain.setTargetAtTime(0,ac().currentTime,0.2); }catch(e){} } },
+    playMedia(spec){ try { return playMedia(spec); } catch(e){ return { stop(){}, seconds:(spec&&spec.seconds)||4 }; } }
   };
 })();
 
@@ -615,6 +680,7 @@ const State = {
   history:[],           // command history
   histIdx:0,
   choice:null,          // pending finale choice key
+  flags:{},             // CYOA flags set by mid-mission decisions; read by later content
   settings:{ volume:0.7, fx:"full", theme:"green", music:false },
   get mission(){ return this.campaign ? this.campaign.missions[this.missionIndex] : null; },
   get target(){ return this.connectedTo ? this.campaign.targets[this.connectedTo] : null; },
@@ -1074,6 +1140,69 @@ const Continue = {
 
 /* ===================== [GAME] flow controller ============================= */
 const Game = {
+  /* ---- CYOA branching: flags, conditional lines, and decisions ---- */
+  flagOK(cond){
+    // line-item condition: {if:"flag", eq:val} | {unless:"flag", eq:val}  (eq defaults true)
+    if(!cond) return true;
+    if(cond.if!==undefined)    return State.flags[cond.if]===(cond.eq!==undefined?cond.eq:true);
+    if(cond.unless!==undefined) return State.flags[cond.unless]!==(cond.eq!==undefined?cond.eq:true);
+    return true;
+  },
+  requiresOK(req){
+    // gate condition on files/options: {flag:"name", eq:val}  (eq defaults true)
+    if(!req) return true;
+    return State.flags[req.flag]===(req.eq!==undefined?req.eq:true);
+  },
+  optionAvailable(o){ return this.requiresOK(o && o.requires); },
+  fileHidden(f){
+    if(!f) return true;
+    if(f.access==="deleted" && !State.tools.scrubber) return true;   // recoverable only with the Scrubber
+    if(f.requires && !this.requiresOK(f.requires)) return true;       // gated behind a choice
+    return false;
+  },
+  // an array item is a string, or { line / lines, if/unless, eq }; returns visible strings
+  visibleLines(arr){
+    const out=[];
+    for(const it of (arr||[])){
+      if(typeof it==="string"){ out.push(it); continue; }
+      if(it && (it.line||it.lines)){
+        if(this.flagOK(it)){ if(it.line) out.push(it.line); if(it.lines) out.push(...it.lines); }
+      }
+    }
+    return out;
+  },
+  async printLines(arr, cls){
+    const c=State.campaign;
+    for(const l of this.visibleLines(arr)){
+      const klass = (typeof cls==="function") ? cls(l)
+                  : (cls!==undefined) ? cls
+                  : (c && l.startsWith(c.handler.name) ? "c-handler" : "c-cyan");
+      await Term.print(this.fmt(l), {cls:klass});
+    }
+  },
+  // present a mid-mission decision and resolve with the chosen option key (awaitable)
+  async presentDecision(spec){
+    Trace.stop();                              // a choice is reading, not idling: freeze heat
+    await Term.blank();
+    await this.printLines(spec.prompt, "c-handler");
+    const opts=spec.options.filter(o=>this.optionAvailable(o));
+    this._decisionOptions=opts;
+    opts.forEach((o,i)=> Term.print("  ["+(i+1)+"] "+o.label,{cls:"c-cyan"}));
+    await Term.print("press a number to choose.",{cls:"c-amber"});
+    State.mode="choice"; Term.showInput(false);
+    return await new Promise(resolve=>{ this._decisionResolve=resolve; });
+  },
+  // fire a mission's decision at a given hook, if present
+  async maybeDecision(hook){
+    const m=State.mission;
+    if(!m || !m.decision || (m.decision.at||"download")!==hook) return;
+    if(m.decision.once && State.flags["_decided_"+State.missionIndex]) return;
+    const key=await this.presentDecision(m.decision);
+    State.flags["_decided_"+State.missionIndex]=true;
+    Trace.start(m.traceRate);                  // resume heat after the choice
+    return key;
+  },
+
   nextStep(){
     const m=State.mission;
     if(!m) return { obj:"standby", hint:"you are at the deck. open the 'library' to choose a campaign." };
@@ -1097,6 +1226,7 @@ const Game = {
   async readFile(name, fileObj){
     const f=fileObj || State.target.files[name];
     State.stats.filesRead++;
+    if(typeof Media!=="undefined" && Media.kindOf(name,f)!=="text"){ Media.open(f,name); return; }
     await Term.blank();
     const body=Array.isArray(f.text)?f.text:[f.text];
     for(const l of body) await Term.print(l,{cls:l.startsWith("//")?"c-faint":"",speed:7});
@@ -1129,13 +1259,30 @@ const Game = {
   async offerChoice(){
     const fin=State.campaign.finale; Trace.stop();
     await Term.blank();
-    for(const l of fin.prompt) await Term.print(this.fmt(l),{cls:"c-handler"});
-    fin.options.forEach((o,i)=> Term.print("  ["+(i+1)+"] "+o.label,{cls:"c-cyan"}));
+    await this.printLines(fin.prompt, "c-handler");
+    const opts=fin.options.filter(o=>this.optionAvailable(o));
+    this._finaleOptions=opts;
+    opts.forEach((o,i)=> Term.print("  ["+(i+1)+"] "+o.label,{cls:"c-cyan"}));
     await Term.print("press a number to decide.",{cls:"c-amber"});
     State.mode="choice"; State.choice=null; Term.showInput(false);
   },
-  pickChoice(n){
-    const fin=State.campaign.finale, opt=fin.options[n-1];
+  async pickChoice(n){
+    // a mid-mission decision takes priority over the finale
+    if(this._decisionResolve){
+      const opt=(this._decisionOptions||[])[n-1];
+      if(!opt) return;
+      Audio.ok();
+      if(opt.sets) Object.assign(State.flags, opt.sets);
+      const resolve=this._decisionResolve;
+      this._decisionResolve=null; this._decisionOptions=null;
+      State.mode="terminal";
+      if(opt.reply) await this.printLines(opt.reply);
+      Save.write();
+      resolve(opt.key);
+      return;
+    }
+    const opts=this._finaleOptions||State.campaign.finale.options;
+    const opt=opts[n-1];
     if(!opt) return;
     State.choice=opt.key; Audio.ok(); this.ending(opt.key);
   },
@@ -1210,7 +1357,7 @@ const Game = {
     await Term.print(t.banner,{cls:"bright"});
     if(t.motd) for(const l of t.motd) await Term.print("  "+l,{cls:"c-faint"});
     if(State.stats && Trace.value>0) await Term.print("warning: you are already flagged. this session starts hot.",{cls:"c-amber"});
-    if(m.beats.onConnect) for(const l of m.beats.onConnect) await Term.print(this.fmt(l),{cls:"c-handler"});
+    if(m.beats.onConnect) await this.printLines(m.beats.onConnect, "c-handler");
     if(State.tools.scrubber && Object.values(t.files).some(f=>f.access==="deleted"||f.recover))
       await Term.print("log scrubber online :: deleted entries are recoverable here. check 'ls'.",{cls:"c-cyan"});
     await Term.print("trace active. recon with 'probe'.",{cls:"c-amber"});
@@ -1225,18 +1372,19 @@ const Game = {
     Trace.bump(-35);                        // breaching buys you breathing room
     const m=State.mission;
     await Term.print("ACCESS GRANTED :: subsystem unlocked.",{cls:"bright"});
-    if(m.beats.onAccess) for(const l of m.beats.onAccess) await Term.print(this.fmt(l),{cls:"c-handler"});
+    if(m.beats.onAccess) await this.printLines(m.beats.onAccess, "c-handler");
     if(State.stats.puzzleFails===0 && !State.stats.nearMiss && State.campaign.handler.quips && State.campaign.handler.quips.clean)
       await Term.print(State.campaign.handler.name+":: "+this.fmt(State.campaign.handler.quips.clean),{cls:"c-handler"});
     await Term.print("data store readable. 'ls' to list, 'download "+m.objective+"' to exfil.",{cls:"c-dim"});
     State.busy=false;
     this.updateObj();
+    await this.maybeDecision("access");   // a choice can fire once the node is open
   },
   async download(file){
     const m=State.mission, t=State.target;
     const f=t.files[file];
     if(!f){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
-    if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
+    if(this.fileHidden(f)){ await Term.print("no such file: "+file,{cls:"c-red"}); return; }
     if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: locked subsystem.",{cls:"c-red"}); Audio.err(); return; }
     await Term.print("downloading "+file+" ",{cls:"c-dim"});
     for(let i=0;i<=10;i++){ await Term.print("["+"#".repeat(i)+".".repeat(10-i)+"] "+(i*10)+"%",{cls:"c-dim",speed:4}); }
@@ -1246,7 +1394,8 @@ const Game = {
     Save.write();
     if(file===m.objective){
       await Term.print("payload secured.",{cls:"bright"});
-      if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(this.fmt(l),{cls:"c-handler"});
+      if(m.beats.onDownload) await this.printLines(m.beats.onDownload, "c-handler");
+      await this.maybeDecision("download");   // a choice can fire once the lead is in hand
       if(State.missionIndex===State.campaign.missions.length-1 && State.campaign.finale){
         await this.offerChoice(); return;
       }
@@ -1309,7 +1458,7 @@ const Game = {
     let lines;
     if(choiceKey && c.endings && c.endings[choiceKey]) lines=c.endings[choiceKey];
     else lines = c.ending || (c.endings && c.endings[Object.keys(c.endings)[0]]) || [];
-    for(const l of lines) await Term.print(this.fmt(l), {cls:l.startsWith(c.handler.name)?"c-handler":"c-cyan"});
+    await this.printLines(lines, l=>l.startsWith(c.handler.name)?"c-handler":"c-cyan");
     await Term.blank();
     await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
     await this.credits();
@@ -1385,10 +1534,12 @@ Commands.register({name:"ls", aliases:["dir"], help:"list files on the node, or 
   if(connected()){
     const t=State.target;
     for(const [name,f] of Object.entries(t.files)){
-      if(f.access==="deleted" && !State.tools.scrubber) continue;   // hidden until the scrubber recovers them
+      if(Game.fileHidden(f)) continue;   // hidden until recovered (scrubber) or unlocked (a choice)
       const locked=(f.access==="locked" && !State.accessGranted);
+      const kind=Media.kindOf(name,f);
+      const ktag = kind==="image" ? "[img] " : kind==="audio" ? "[aud] " : "";
       const tag = (f.access==="deleted") ? "[recvrd] " : (locked?"[locked] ":"         ");
-      await Term.print("  "+tag+name,{cls:locked?"c-faint":(f.access==="deleted"?"c-cyan":"c-dim")});
+      await Term.print("  "+tag+ktag+name,{cls:locked?"c-faint":(f.access==="deleted"?"c-cyan":"c-dim")});
     }
     return;
   }
@@ -1400,12 +1551,12 @@ Commands.register({name:"ls", aliases:["dir"], help:"list files on the node, or 
   await Term.print("read with 'cat <file>'.",{cls:"c-faint"});
 }});
 
-Commands.register({name:"cat", aliases:["read","open","more"], help:"read a file on the node, or a downloaded file at the deck", run:async(a)=>{
+Commands.register({name:"cat", aliases:["read","open","more","play","view"], help:"read a file, view an image, or play a recording", run:async(a)=>{
   if(!a[0]){ await Term.print("usage: cat <file>",{cls:"c-amber"}); return; }
   if(connected()){
     const t=State.target, f=t.files[a[0]];
     if(!f){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
-    if(f.access==="deleted" && !State.tools.scrubber){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
+    if(Game.fileHidden(f)){ await Term.print("no such file: "+a[0],{cls:"c-red"}); return; }
     if(f.access==="locked" && !State.accessGranted){ await Term.print("permission denied: "+a[0],{cls:"c-red"}); Audio.err(); return; }
     await Game.readFile(a[0]);
     return;
@@ -1458,6 +1609,7 @@ Commands.register({name:"resume", aliases:["continue","code"], help:"reload a co
     if(tgt && tgt.files[pm.objective]) State.stash[pm.objective]={ host:pm.targetId, file:tgt.files[pm.objective] };
   }
   State.tools={ scrubber:false, analyzer:false, failsafe:0 };
+  State.flags={};               // a code-jump is a clean checkpoint; choices restart for this contract
   State.credits=5; $("#hud-proof").textContent=State.credits;
   Trace.reset(); Audio.ok();
   await Term.print("continue code accepted. restoring contract "+String(idx+1).padStart(2,"0")+".",{cls:"bright"});
@@ -2098,6 +2250,390 @@ Campaigns.register({
   ]
 });
 
+/* ===================== [CONTENT] Campaign 03: THE ASHFALL FILE ============
+   A homage to 1990s paranormal-investigation television. Original fan work:
+   a brand-new case with original dialogue, not a reproduction of any episode.
+   The three paranoid hackers are your handler; the two FBI agents are the
+   field investigators whose case you dig for. Every locked file pairs the
+   believer's paranormal read with the skeptic doctor's clinical one, and the
+   handler is the jittery third voice on comms. Showcases multi-voice
+   documents, Scrubber recovery, honeypots, and {handle} greetings.        */
+Campaigns.register({
+  id:"ashfall",
+  title:"THE ASHFALL FILE",
+  blurb:"a branching paranormal-investigation homage. your choices reshape the case and its ending. 4 contracts.",
+  continueCodes:["1013","0042","1973","2012"],
+  themeOverrides:{ "--phosphor":"#8fd0ff","--phosphor-dim":"#356f96","--phosphor-faint":"#102634","--glow":"0 0 1px rgba(160,225,255,.5),0 0 4px rgba(80,190,255,.16)" },
+  handler:{
+    name:"GUNMEN",
+    intro:[
+      "{handle}? this is the line you were told to expect. don't say your real name. don't say anything, actually.",
+      "we're the three people the federal government pretends are a joke. that pretense is the only reason we're still breathing.",
+      "there are two agents working a case nobody upstairs wants worked. a town called Ashfall lost four hours last Tuesday. all of it. everyone.",
+      "the agents have badges and rules. you have us, and you have no rules. this one is yours to steer, {handle}. the choices you make along the way will decide how it ends. dig."
+    ],
+    quips:{
+      clean:"clean in, clean out. Frohike says you're either very good or one of them. i told him those aren't different things.",
+      nearmiss:"that tripped something. somewhere a light just came on in a room with no windows. ease back, {handle}."
+    }
+  },
+  missions:[
+    {
+      codename:"COLD OPEN",
+      briefing:[
+        "the agents filed the Ashfall case, then watched it get reclassified out of their hands inside a day.",
+        "crack the field-office records and pull the original case file before the sanitized version is the only one left."
+      ],
+      targetId:"ecf.fbi-field.gov", traceRate:1,
+      unlockCmd:"crack", puzzleId:"passcrack", puzzleSpec:{length:5, title:"AUTH :: FIELD-OFFICE ECF"},
+      objective:"case_x73317.file",
+      decoys:[
+        { host:"mail.fbi-field.gov", note:"(internal mail, needs a badge)", honeypot:false },
+        { host:"tipline.fbi-field.gov", note:"(public tip line, every keystroke recorded)", honeypot:true }
+      ],
+      beats:{
+        onConnect:["GUNMEN:: federal box. behave like you belong and the logs will believe you do."],
+        onAccess:["GUNMEN:: pull the case file, and read both agents' notes. they never agree. that disagreement is the case."],
+        onDownload:["GUNMEN:: 'missing time,' Byers says, very quietly. then he stops typing. Byers never stops typing."]
+      },
+      decision:{
+        at:"download", once:true,
+        prompt:[
+          "GUNMEN:: the two agents are about to be reassigned and cut off. we can patch this file to them tonight, or we can keep them clean and work it without them.",
+          "GUNMEN:: tell them, and you have allies inside, but the watchers start watching them too. keep them dark, and you're alone, but they stay safe and useful later."
+        ],
+        options:[
+          { key:"tell",   label:"loop the agents in now (allies, but they draw heat)",
+            sets:{ agents:"informed" },
+            reply:["GUNMEN:: sending. the believer answers in nine seconds flat. of course he does. he's been waiting his whole life for this file, {handle}."] },
+          { key:"shield", label:"keep the agents in the dark for now (you work alone, they stay clean)",
+            sets:{ agents:"dark" },
+            reply:["GUNMEN:: nothing goes to them. it's just you and us in the wire. lonelier this way. safer for them. Byers approves, which is rare."] }
+        ]
+      }
+    },
+    {
+      codename:"PROVISIONAL FINDINGS",
+      briefing:[
+        "one Ashfall returnee didn't come back right. she died three days later, and the county sealed the autopsy.",
+        "break the seal. her own report is in there, and so is the thing she found that she cannot explain."
+      ],
+      targetId:"morgue.cascade-county.gov", traceRate:2,
+      unlockCmd:"decrypt", puzzleId:"decrypt", puzzleSpec:{plain:"CAUSE OF DEATH UNDETERMINED", title:"SEALED :: COUNTY MEDICAL"},
+      objective:"autopsy_provisional.rec",
+      decoys:[
+        { host:"records.cascade-county.gov", note:"(public death records)", honeypot:false },
+        { host:"intake.cascade-county.gov", note:"(unsecured intake terminal, wide open)", honeypot:true }
+      ],
+      beats:{
+        onConnect:[
+          "GUNMEN:: a morgue server. Frohike says these are always badly secured. Frohike is reliably right about the wrong things.",
+          { if:"agents", eq:"informed", line:"GUNMEN:: the doctor agent already left you a back door here. she works fast when she's angry, and she is very angry." },
+          { if:"agents", eq:"dark", line:"GUNMEN:: no help inside this time. the door's all yours to force. you chose it that way." }
+        ],
+        onAccess:["GUNMEN:: read the doctor's findings. she's the skeptic. the day she can't explain something is the day you start being afraid."],
+        onDownload:["GUNMEN:: an object that isn't on any surgical supply list, made of a metal that isn't on the chart the way they teach it. love that for us."]
+      },
+      decision:{
+        at:"download", once:true,
+        prompt:[
+          "GUNMEN:: there's a pointer in here to where the physical implant is stored, the actual warm little object. we can grab the chain-of-custody trail and have real, physical proof. or we take the data only and stay ghosts.",
+          "GUNMEN:: proof is a weapon you can show the world. it's also a thread they can pull straight back to this terminal."
+        ],
+        options:[
+          { key:"evidence", label:"secure the physical-evidence trail (hard proof, but you light up their radar)",
+            sets:{ implant:"secured" },
+            reply:["GUNMEN:: got the custody trail. we know where the object is now. somewhere, an alarm we can't see just learned your shape, {handle}."] },
+          { key:"data",     label:"take the data only (deniable, quiet, but it's just files)",
+            sets:{ implant:"data" },
+            reply:["GUNMEN:: data only. nobody can prove you were ever near the evidence locker. nobody can prove the object is real, either. trade-offs."] }
+        ]
+      }
+    },
+    {
+      codename:"MISSING TIME",
+      briefing:[
+        "Ashfall sits in the shadow of a 'decommissioned' weather station that pulls more power than a town twice its size.",
+        "route past the perimeter and pull whatever it actually runs. the four hours started and ended at that fence."
+      ],
+      targetId:"relay.ashfall-station.net", traceRate:3,
+      unlockCmd:"route", puzzleId:"route", puzzleSpec:{title:"PERIMETER :: ASHFALL STATION"},
+      objective:"program_log.txt",
+      decoys:[
+        { host:"weather.ashfall-station.net", note:"(legacy weather feed, still 'operational')", honeypot:false },
+        { host:"watchdog.ashfall-station.net", note:"(unsecured admin at a black site? of course it is)", honeypot:true }
+      ],
+      beats:{
+        onConnect:[
+          "GUNMEN:: 'decommissioned,' the sign says. the power draw disagrees. Langly's hands are shaking. he says it's the coffee.",
+          { if:"implant", eq:"secured", line:"GUNMEN:: heads up: since you grabbed the evidence trail, they're sweeping harder. you're loud in here whether you like it or not." }
+        ],
+        onAccess:["GUNMEN:: you're inside the fence, the digital one. read the program log. and {handle}, whatever it says, it is not the weather."],
+        onDownload:["GUNMEN:: induction. recall suppression. 'subject pool: municipal.' the town was the experiment. nobody volunteered. nobody remembers being asked."]
+      },
+      decision:{
+        at:"download", once:true,
+        prompt:[
+          "GUNMEN:: the dissenting technician who wrote the buried log is real, and scared, and reachable on a maintenance channel right now.",
+          "GUNMEN:: we can spend the next minutes pulling them out, a living witness, or we can leave them and keep our footprint small. extracting them means leaving tracks with your name in the mud."
+        ],
+        options:[
+          { key:"extract", label:"reach out and extract the technician (a living witness, at a cost)",
+            sets:{ tech:"saved" },
+            reply:[
+              "GUNMEN:: line open. 'who is this,' they say. we say 'the people who read your log.' long pause. then: 'thank god. get me out.'",
+              "GUNMEN:: they're moving. it's messy and it's loud and Byers is already building them a new name. you may have just saved a life, {handle}."] },
+          { key:"leave",   label:"leave the technician and stay invisible (safer for you, not for them)",
+            sets:{ tech:"left" },
+            reply:[
+              "GUNMEN:: we close the channel. it's the smart call. it's the cold one.",
+              "GUNMEN:: Frohike doesn't say anything. that's how you know. we don't talk about the tech again unless you bring it up."] }
+        ]
+      }
+    },
+    {
+      codename:"TRUST NO ONE",
+      briefing:[
+        "everything upstream points at one archive, a level that appears on no federal chart. they call it blue level.",
+        "intercept its channel, take the master file, and decide what the truth is worth."
+      ],
+      targetId:"archive.blue-level.gov", traceRate:4,
+      unlockCmd:"intercept", puzzleId:"intercept", puzzleSpec:{rounds:3, title:"CHANNEL :: BLUE LEVEL"},
+      objective:"master_file.sealed",
+      decoys:[
+        { host:"press.blue-level.gov", note:"(public affairs, pre-sanitized)", honeypot:false },
+        { host:"oversight.blue-level.gov", note:"(congressional oversight, open, sure, laughable)", honeypot:true }
+      ],
+      beats:{
+        onConnect:["GUNMEN:: blue level. we have whispered about this room for years and prayed it wasn't real. it's real, and it has excellent uptime."],
+        onAccess:[
+          "GUNMEN:: the master file, and a channel to push it anywhere. this is the part you choose, {handle}.",
+          { if:"tech", eq:"saved", line:"GUNMEN:: and the technician you pulled out is sitting in our safehouse right now, ready to put their name to all of it. that changes what's possible." },
+          { if:"agents", eq:"informed", line:"GUNMEN:: the two agents are standing by on a secure line. you brought them this far. they want to know how it ends too." }
+        ],
+        onDownload:["GUNMEN:: it's in your hands. read the master file, then choose. everything you did to get here narrowed it to this."]
+      }
+    }
+  ],
+  targets:{
+    "ecf.fbi-field.gov":{
+      banner:"FEDERAL FIELD OFFICE // electronic case files // authorized access only",
+      motd:[
+        "every query is attributed. there is no anonymous read.",
+        "reminder: reclassification is not deletion. nothing here is deleted. things are only made harder to find."
+      ],
+      services:["443/https case-index","636/ldaps badge-auth","22/ssh records (auth required)"],
+      locked:"case records behind a 5-glyph badge key",
+      files:{
+        "index.html":{access:"open",text:[
+          "FIELD OFFICE :: open caseload (public-facing summary)",
+          "missing persons: 0. the Ashfall residents were all located. that is technically true.",
+          "// what was located was their bodies, standing where they'd been four hours earlier, with the four hours gone."]},
+        "duty_log.txt":{access:"open",text:[
+          "DUTY LOG, Ashfall responding deputy:",
+          "2:00 PM dispatch quiet. 6:00 PM dispatch quiet.",
+          "the four hours in between are blank in the log too. i do not remember my shift. i was on my shift.",
+          "// i found my own coffee still warm and could not tell you who poured it."]},
+        "case_x73317.file":{access:"locked",text:[
+          "FEDERAL CASE FILE X-73317 :: classification PENDING (downgraded 24h after open)",
+          "INCIDENT: Ashfall, OR, population 1,140. on Tuesday, between 2:00 and 6:00 PM, no resident can account for their actions. clocks agree. memory does not exist.",
+          "",
+          "FIELD NOTE (special agent, the believer):",
+          "  Four hours did not go missing. Four hours were taken. A whole town at once is not a fugue state. It is a harvest.",
+          "  Three returnees show a healed incision behind the right ear. Healed. In four hours.",
+          "",
+          "FIELD NOTE (special agent, M.D., the skeptic):",
+          "  A shared gap is consistent with a released agent: gas, contaminant, mass suggestion. The incisions are old until proven otherwise.",
+          "  I will not write the word 'taken' in a federal document. Neither should my partner.",
+          "",
+          "// reclassification stamp, 24 hours later: NO FEDERAL INTEREST. file sealed. agents verbally reassigned."],
+          react:"two voices, one case. the believer and the doctor. the believer is usually right, and it usually costs him everything. now you decide what to do with them, {handle}."},
+        "reassignment.memo":{access:"deleted",text:[
+          "// deleted within the hour, recovered from a relay shadow:",
+          "INTERNAL :: re: X-73317",
+          "Pull both agents off Ashfall by end of day. Cite resource allocation.",
+          "Do not put the real reason in writing. You know the real reason.",
+          "The believer will not let go. Watch him. The doctor keeps copies. Watch her harder."],
+          react:"so it wasn't bureaucracy that buried this. it was a hand. 'watch her harder.' they're scared of the woman with the copies. good. so am i, a little."}
+      }
+    },
+    "morgue.cascade-county.gov":{
+      banner:"CASCADE COUNTY MEDICAL EXAMINER // records vault",
+      motd:[
+        "chain of custody is sacred here. it is also, lately, broken on purpose.",
+        "bodies in this county have a way of being released before the paperwork agrees they should be."
+      ],
+      services:["443/https case-vault","25/smtp examiner-mail","8080/http intake"],
+      locked:"sealed autopsy behind an encrypted channel",
+      files:{
+        "intake_board.txt":{access:"open",text:[
+          "INTAKE BOARD (public):",
+          "subject F, age 34, Ashfall. admitted deceased. status: RELEASED FOR CREMATION.",
+          "// release authorized 40 minutes before the examiner signed the cause of death. read that again."]},
+        "autopsy_provisional.rec":{access:"locked",text:[
+          "PROVISIONAL AUTOPSY :: subject F, age 34, Ashfall returnee",
+          "",
+          "EXAMINER NOTE (M.D., the skeptic):",
+          "  Cause of death undetermined. The heart simply stopped. No occlusion, no defect, no toxin I can name.",
+          "  Behind the right ear, a healed incision. Beneath it, a foreign body the size of a grain of rice.",
+          "  The object is metallic. It does not oxidize. It is warm to the touch nine hours postmortem. I have no rational entry for that, so I have left the line blank.",
+          "",
+          "PARTNER ANNOTATION (the believer):",
+          "  You left the line blank because the rational entry is a lie, and you are too honest to write a lie.",
+          "  They put something in her. It kept her quiet until it no longer needed her quiet.",
+          "",
+          "EXAMINER, final line, handwritten:",
+          "  I am keeping a second copy somewhere they will not look. The first copy will disappear. They always do."],
+          react:"she kept a second copy. paranoid, careful, exactly our kind of person. that warm little object is going to keep me up for a week, {handle}."},
+        "evidence_locker.trail":{access:"locked", requires:{flag:"implant", eq:"secured"}, text:[
+          "CHAIN OF CUSTODY (recovered because you went after it):",
+          "item: foreign body, subject F. status: SEALED, do not analyze, do not return.",
+          "current location: blue-level archive, evidence vault, sublevel.",
+          "transfer authorized by the same signature that buried the case.",
+          "// you now know the object is real, where it is, and who hid it. that is a weapon. carry it carefully."],
+          react:"this is the proof, {handle}. cold, physical, undeniable. you took a risk for it and now you're holding something they would kill to keep buried."}
+      }
+    },
+    "relay.ashfall-station.net":{
+      banner:"ASHFALL STATION // atmospheric research (decommissioned) // RESTRICTED",
+      motd:[
+        "this facility is decommissioned. please disregard the power, the staff, the fence, and the lights.",
+        "do not initiate a window while subjects are within the municipal radius. (this notice is older than it should be.)"
+      ],
+      services:["443/https station-control","9000/tcp array-bus","--/-- perimeter firewall: ACTIVE"],
+      locked:"station control behind the perimeter firewall",
+      files:{
+        "weather.readout":{access:"open",text:[
+          "ATMOSPHERIC READOUT (legacy):",
+          "Tuesday, 2:00 PM to 6:00 PM: SUPPRESSED.",
+          "the weather is not classified. the weather is fine. it is the four hours of weather that are missing.",
+          "// even the sky doesn't remember that afternoon."]},
+        "program_log.txt":{access:"locked",text:[
+          "STATION LOG :: PROGRAM (designation withheld)",
+          "",
+          "OPERATOR ENTRY:",
+          "  Tuesday window executed. Municipal subject pool. Duration four hours. Recall suppression nominal.",
+          "  Three implant rejections. One cascade fatality projected. Acceptable.",
+          "",
+          "TECHNICIAN ENTRY (unsigned):",
+          "  'Acceptable' is a word for equipment. These were people buying groceries an hour earlier.",
+          "  I asked who authorizes doing this to a town. I was told the town authorizes it by being downstream of us.",
+          "  I am writing this where the operator log will not sync it. If you are reading this, the scrubber found it, and you should already be running."],
+          react:"'the town authorizes it by being downstream of us.' i have read a lot of evil sentences. that one goes on the wall, right after we live through this, {handle}.",
+          recover:[
+            "// recovered, the technician's deleted addendum:",
+            "  'one more thing, the worst thing. the technology is not ours. we maintain it. we did not build it. nobody at this station knows who did.'",
+            "  'the believer agent is right and the doctor agent is right, and that is the nightmare: it is a human program running something that was never human.'"]},
+        "maintenance.note":{access:"deleted",text:[
+          "// recovered maintenance ticket:",
+          "array drew full power Tuesday 2-6 PM. logged as a generator test.",
+          "there was no generator test. there is no generator."],
+          react:"they can't even keep their cover stories powered. a generator that doesn't exist drew a town's worth of current. keep moving."},
+        "gate_cam_1403.jpg":{access:"locked",
+          image:{ subject:"figure", treatment:"noisy", timestamp:"14:03 TUE", caption:"perimeter camera, 14:03, the hour the town went blank. one figure at the fence. no badge on file. no shadow at that sun angle." },
+          text:["perimeter camera still, 14:03 Tuesday."],
+          react:"that's a person at the fence during the missing hours, {handle}. no shadow. Langly enhanced it four times and the shadow never showed up. cameras don't lie, but that one is trying to."}
+      }
+    },
+    "archive.blue-level.gov":{
+      banner:"## BLUE LEVEL ARCHIVE ## this designation does not exist ## neither do you, now",
+      motd:[
+        "you are reading a banner you are not cleared to see. a count has started.",
+        "the program continues. the program has always continued. continue is the only instruction."
+      ],
+      services:["--/-- archive-control (sweeping)","--/-- master-store","--/-- broadcast primitive"],
+      locked:"archive channel, packet-windowed",
+      files:{
+        "master_file.sealed":{access:"locked",text:[
+          "MASTER FILE :: BLUE LEVEL :: being read by you, which means a count somewhere just began",
+          "",
+          "SUMMARY (for a reader who will not exist long):",
+          "  The program is old. Older than the agencies that run it. We inherited the hardware and a single instruction: continue.",
+          "  We do not know its origin. We stopped asking. The objects are not manufactured here. The windows are not ours to open. We only learned the timing.",
+          "  Ashfall was a calibration. There will be more. There have already been more. You are downstream too.",
+          "",
+          "DISSENT (one signatory, struck from the record):",
+          "  We tell ourselves that a human hand on the switch makes it a human program. It does not. It only makes us the hand.",
+          "",
+          "// the believer agent's stolen note, recovered here, filed as evidence against him:",
+          "//   'I never needed it to be aliens. I needed it to be true. Those were always two different wishes, and only one of them was ever going to be granted.'"],
+          react:"there it is. not an answer, a deeper question. the believer never wanted little green men. he wanted the truth. so do we. so do you, {handle}, or you'd have stopped three doors ago.",
+          recover:[
+            "// recovered, struck dissent, final line:",
+            "  'if anyone reads this from outside: we are not the authors of the dark. we are its filing clerks. burn the files and the dark is still there. that is why I could never decide to burn them.'"]},
+        "broadcast.primitive":{access:"locked",text:[
+          "BROADCAST PRIMITIVE :: ARMED",
+          "Effect: pushes the attached file to every public mirror, newsroom, and cached relay at once. Irreversible.",
+          "Alternative routing: a narrow channel to two field agents only. Quiet. Deniable.",
+          "Third option, always available, never recommended by us: the delete key.",
+          "Choose at the prompt. There is no correct choice. There is only the one you can live behind."]},
+        "window_intercept.wav":{access:"locked",
+          audio:{ form:"transmission", seconds:6, caption:"signal captured during the Tuesday window. mostly static. under the static, a count, slow, in a voice that does not breathe between numbers." },
+          text:["intercepted transmission, Tuesday 14:00-18:00."],
+          react:"play it again if you can stand to, {handle}. that's counting. something counted the town down. Frohike turned green and Frohike has seen everything."}
+      }
+    }
+  },
+  finale:{
+    prompt:[
+      "GUNMEN:: you're holding the only copy that was ever going to leave that room. three lines are open, {handle}.",
+      { if:"implant", eq:"secured", line:"GUNMEN:: and you have the physical proof. the warm little object, locatable, real. that makes going loud a great deal more dangerous to them than to us." },
+      { if:"tech", eq:"saved", line:"GUNMEN:: and you have a living witness in our safehouse, willing to testify. a name, a face, a voice. that opens a door that data alone never could." },
+      { if:"agents", eq:"informed", line:"GUNMEN:: and the two agents are on the line, badges ready, waiting on you." },
+      { if:"agents", eq:"dark", line:"GUNMEN:: the agents still don't know you exist. whatever you choose, they'll meet this truth cold, same as the rest of the world." },
+      "GUNMEN:: Byers says publish. Frohike says protect the agents. Langly says run. for once all three mean the same thing: we trust you. choose."
+    ],
+    options:[
+      { key:"publish", label:"push it to the world -- the truth is out there now, and so are you" },
+      { key:"protect", label:"hand it to the two agents -- quiet, deniable, the fight continues in the dark" },
+      { key:"testify", label:"go public WITH your witness and proof -- the version they cannot bury", requires:{flag:"tech", eq:"saved"} },
+      { key:"burn",    label:"erase it and vanish -- you were never here, and neither was Ashfall" }
+    ]
+  },
+  endings:{
+    publish:[
+      "you push it. every mirror we ever cached lights up at once. Ashfall trends above the weather.",
+      { if:"implant", eq:"secured", line:"the physical-evidence trail goes out with it. this time the denials don't take. you didn't give them a theory, you gave them a map to the body." },
+      { if:"implant", eq:"data", line:"it's files, only files, and by morning three networks are calling it an elaborate hoax. the truth is out there. so is the doubt." },
+      "GUNMEN:: it's out. they can't unsay a thing a million people already saw. they can only come for the people who said it.",
+      "GUNMEN:: pack a bag, {handle}. Langly already packed three. the truth is out there now, which means so are we.",
+      { if:"agents", eq:"informed", line:"somewhere two agents read the same file on the morning news and, for the first time, do not argue about what it means." },
+      "-- THE ASHFALL FILE :: the truth is loud now. loud was never the same as safe. --"
+    ],
+    protect:[
+      "you route it to badges and nowhere else. no headline, no mirror. just evidence, in careful hands.",
+      { if:"agents", eq:"informed", line:"the two agents were ready for it. they've been ready since the night you looped them in. the slow war starts with people who already trust each other." },
+      { if:"agents", eq:"dark", line:"the agents get it cold, from a source they can't see. they'll spend months proving it's real before they can spend a day proving it matters. you cost them that time to keep them clean." },
+      "GUNMEN:: the deniable war. Byers calls it the brave choice. Frohike calls it the kind one. they're each a little right.",
+      { if:"implant", eq:"secured", line:"and the believer agent now knows exactly where the object is. he will not sleep until he holds it. that is either hope or a death sentence, hard to say which." },
+      "Ashfall stays a town that lost an afternoon and never learned why. you handed the people who care a thread to pull. the rest is theirs, {handle}.",
+      "-- THE ASHFALL FILE :: trust no one, the man said. the two agents trust each other. it will have to be enough. --"
+    ],
+    testify:[
+      "you don't just publish the file. you publish it with a living, named witness standing beside it, and the evidence trail under it.",
+      "GUNMEN:: the technician goes on the record. face, voice, the works. Byers is crying and pretending it's allergies.",
+      { if:"implant", eq:"secured", line:"the custody trail leads reporters straight to a vault they were never supposed to find. they find it. the object is real and now everyone knows where it slept." },
+      "GUNMEN:: this is the version they can't call a hoax, can't bury, can't out-wait. a person looked into a camera and said it happened to my town.",
+      { if:"agents", eq:"informed", line:"the two agents stand at the edge of the press scrum, off the record, watching the thing they were forbidden to investigate become the only story in the country." },
+      "GUNMEN:: they'll come for all of us now, {handle}. but they'll be coming for a truth that already grew too many roots to pull. that's the most any of us ever wanted.",
+      "-- THE ASHFALL FILE :: not the loudest truth. the one with a witness. the kind that holds. --"
+    ],
+    burn:[
+      "you wipe it. the master file, the copies, the path that led here, your own breadcrumbs. clean.",
+      "GUNMEN:: ...okay. okay. now nobody will ever know there was anything to know. that's the point, and it's the horror of it, {handle}.",
+      { if:"tech", eq:"saved", line:"the technician you saved asks what it was all for, then. you don't have an answer. neither do we." },
+      { if:"tech", eq:"left", line:"somewhere a technician you decided not to save was right to be afraid. nobody will ever connect those dots now. you made sure of it." },
+      "GUNMEN:: Langly says you're the only one of us who'll sleep tonight. Byers won't look at the screen. Frohike poured three drinks and drank all three.",
+      "Ashfall keeps its missing afternoon. the next town doesn't know it's the next town. you keep your hands clean and your nights very long.",
+      "-- THE ASHFALL FILE :: the truth is still out there. you simply left it there. --"
+    ]
+  },
+  ending:[
+    "GUNMEN:: it's done, {handle}. whatever you chose, it's done.",
+    "GUNMEN:: the truth is out there. it always was. tonight you got closer to it than the people paid to bury it."
+  ]
+});
+
 const CampaignManager = {
   start(){ this.openLibrary(true); },
   // the persistent home base. returns here after boot, after an ending, and on the 'library' command.
@@ -2147,7 +2683,7 @@ const CampaignManager = {
     const r=sv.run;
     State.missionIndex=r.missionIndex||0; State.credits=r.credits||0;
     State.tools=Object.assign({scrubber:false,analyzer:false,failsafe:0}, r.tools||{});
-    State.stash=r.stash||{}; State.downloaded=r.downloaded||{}; State.filesSeen=r.filesSeen||{};
+    State.stash=r.stash||{}; State.downloaded=r.downloaded||{}; State.filesSeen=r.filesSeen||{}; State.flags=r.flags||{};
     State.connectedTo=null; State.accessGranted=false; State.history=[]; State.histIdx=0;
     $("#hud-proof").textContent=State.credits;
     Trace.reset();
@@ -2294,7 +2830,7 @@ const Save = {
           campaign: State.campaign?State.campaign.id:null,
           missionIndex:State.missionIndex, credits:State.credits,
           tools:State.tools, stash:State.stash, downloaded:State.downloaded,
-          filesSeen:State.filesSeen
+          filesSeen:State.filesSeen, flags:State.flags
         }
       };
       window.localStorage.setItem(this.KEY, JSON.stringify(data));
@@ -2326,6 +2862,112 @@ const Save = {
   applySettings(data){
     if(data && data.settings) State.settings=Object.assign(State.settings, data.settings);
     if(data && data.handle) State._savedHandle=data.handle;
+  }
+};
+
+/* ---- Media: image and audio "files" rendered/synthesized in-engine ---- */
+const Media = {
+  _audio:null, _raf:null,
+  kindOf(name, f){
+    if(f && f.kind) return f.kind;
+    const ext=(name.split(".").pop()||"").toLowerCase();
+    if(["jpg","jpeg","png","img","bmp","gif","tif","photo"].includes(ext)) return "image";
+    if(["wav","mp3","aud","vox","ogg","rec"].includes(ext) && f && f.audio) return "audio";
+    if(f && f.image) return "image";
+    if(f && f.audio) return "audio";
+    return "text";
+  },
+  // build an SVG "photo" from a small declarative spec, drawn in phosphor monochrome
+  imageSVG(spec){
+    spec=spec||{};
+    const W=520,H=360, R=(s)=>{ // tiny seeded rng so a file looks the same each open
+      let h=0; const str=(spec.seed||spec.caption||"ashfall")+s; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return (h%1000)/1000;
+    };
+    const subject=spec.subject||"figure";
+    const treatment=spec.treatment||"noisy";
+    let body="";
+    // grain
+    let grain="";
+    for(let i=0;i<120;i++){ const x=Math.floor(R("gx"+i)*W), y=Math.floor(R("gy"+i)*H), o=(0.04+R("go"+i)*0.12).toFixed(2);
+      grain+='<rect x="'+x+'" y="'+y+'" width="2" height="2" fill="var(--phosphor)" opacity="'+o+'"/>'; }
+    // subject
+    if(subject==="figure"){
+      body+='<ellipse cx="260" cy="150" rx="40" ry="46" fill="none" stroke="var(--phosphor)" stroke-width="2" opacity="'+(0.5+R("a")*0.3)+'"/>';
+      body+='<path d="M210 360 Q210 230 260 220 Q310 230 310 360 Z" fill="var(--phosphor)" opacity="0.25"/>';
+      body+='<circle cx="260" cy="150" r="60" fill="none" stroke="var(--phosphor)" stroke-width="1" opacity="0.3"/>';
+    } else if(subject==="face"){
+      body+='<ellipse cx="260" cy="180" rx="80" ry="100" fill="none" stroke="var(--phosphor)" stroke-width="2" opacity="0.55"/>';
+      body+='<circle cx="232" cy="160" r="6" fill="var(--phosphor)"/><circle cx="288" cy="160" r="6" fill="var(--phosphor)"/>';
+      body+='<path d="M236 215 Q260 228 284 215" fill="none" stroke="var(--phosphor)" stroke-width="2"/>';
+    } else if(subject==="document"){
+      body+='<rect x="150" y="60" width="220" height="250" fill="none" stroke="var(--phosphor)" stroke-width="2" opacity="0.6"/>';
+      for(let i=0;i<10;i++){ const w=70+R("l"+i)*180; body+='<rect x="168" y="'+(86+i*22)+'" width="'+w+'" height="6" fill="var(--phosphor)" opacity="0.35"/>'; }
+    } else if(subject==="map"){
+      for(let i=0;i<6;i++){ const y=40+i*52; body+='<path d="M40 '+y+' Q260 '+(y+(R("m"+i)*40-20))+' 480 '+y+'" fill="none" stroke="var(--phosphor)" stroke-width="1" opacity="0.4"/>'; }
+      body+='<circle cx="'+(120+R("px")*280)+'" cy="'+(80+R("py")*200)+'" r="8" fill="none" stroke="var(--alert-cyan)" stroke-width="2"/>';
+    } else { // object
+      body+='<rect x="200" y="130" width="120" height="100" rx="8" fill="none" stroke="var(--phosphor)" stroke-width="2" opacity="0.6"/>';
+      body+='<circle cx="260" cy="180" r="26" fill="var(--phosphor)" opacity="0.2"/>';
+    }
+    // redactions
+    let red="";
+    const nred=spec.redactions||(treatment==="redacted"?3:0);
+    for(let i=0;i<nred;i++){ const y=60+R("ry"+i)*240, x=60+R("rx"+i)*120, w=140+R("rw"+i)*200;
+      red+='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="16" fill="#000" stroke="var(--phosphor)" stroke-width="0.5"/>'; }
+    // corruption: horizontal glitch slices
+    let glitch="";
+    if(treatment==="corrupted"){ for(let i=0;i<5;i++){ const y=R("cy"+i)*H, h=4+R("ch"+i)*16, dx=(R("cd"+i)*40-20);
+      glitch+='<rect x="'+dx+'" y="'+y+'" width="'+W+'" height="'+h+'" fill="var(--phosphor)" opacity="'+(0.06+R("co"+i)*0.1).toFixed(2)+'"/>'; } }
+    const thermal = treatment==="thermal" ? '<rect width="'+W+'" height="'+H+'" fill="var(--phosphor)" opacity="0.06"/>' : "";
+    const ts=spec.timestamp||"";
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" xmlns="http://www.w3.org/2000/svg">'
+      +'<rect width="'+W+'" height="'+H+'" fill="#02100a"/>'+thermal+grain+body+glitch+red
+      +(ts?'<text x="12" y="'+(H-12)+'" font-family="monospace" font-size="13" fill="var(--phosphor)" opacity="0.7">'+ts+'</text>':'')
+      +'<rect x="1" y="1" width="'+(W-2)+'" height="'+(H-2)+'" fill="none" stroke="var(--phosphor)" stroke-width="1" opacity="0.4"/></svg>';
+  },
+  open(file, name){
+    const kind=this.kindOf(name, file);
+    const title=$("#viewer-title"), stage=$("#viewer-stage"), cap=$("#viewer-cap");
+    Trace.stop();
+    title.textContent=(kind==="audio"?"audio playback :: ":"image viewer :: ")+name;
+    stage.innerHTML=""; cap.textContent="";
+    if(kind==="image"){
+      const frame=el("div","vframe");
+      if(file.image && file.image.dataUri){ const img=document.createElement("img"); img.src=file.image.dataUri; frame.appendChild(img); }
+      else { frame.innerHTML=this.imageSVG(file.image||{}); }
+      const scan=el("div","vscan"); frame.appendChild(scan);
+      stage.appendChild(frame);
+      cap.textContent=(file.image&&file.image.caption)|| (Array.isArray(file.text)?file.text.join(" "):file.text) || "";
+    } else { // audio
+      const wave=el("div","wave");
+      const seed=(file.audio&&file.audio.seed)||name; let h=0; for(let i=0;i<seed.length;i++) h=(h*31+seed.charCodeAt(i))>>>0;
+      const N=60; for(let i=0;i<N;i++){ const b=el("i"); h=(h*1103515245+12345)>>>0; b.style.height=(8+(h%92))+"%"; wave.appendChild(b); }
+      stage.appendChild(wave);
+      const head=el("div","playhead","playing ..."); stage.appendChild(head);
+      cap.textContent=(file.audio&&file.audio.caption)|| (Array.isArray(file.text)?file.text.join(" "):file.text) || "[recording]";
+      // play + animate a playhead across the bars
+      this._audio=Audio.playMedia(file.audio||{form:"transmission",seconds:5});
+      const bars=[...wave.children], dur=(this._audio.seconds||5)*1000, t0=Date.now();
+      const tick=()=>{ const p=Math.min(1,(Date.now()-t0)/dur); const lit=Math.floor(p*bars.length);
+        bars.forEach((b,i)=> b.classList.toggle("lit", i<=lit));
+        if(p<1 && State.mode==="viewer"){ this._raf=requestAnimationFrame(tick); }
+        else { head.textContent= p>=1 ? "end of recording" : head.textContent; } };
+      tick();
+    }
+    State.mode="viewer";
+    State._viewerReact = (file.react && !State.filesSeen[name]) ? file.react : null;
+    State.filesSeen[name]=true;
+    $("#viewer").classList.add("open");
+    Term.showInput(false);
+  },
+  async close(){
+    if(this._raf){ cancelAnimationFrame(this._raf); this._raf=null; }
+    if(this._audio){ try{ this._audio.stop(); }catch(e){} this._audio=null; }
+    $("#viewer").classList.remove("open");
+    State.mode="terminal";
+    const react=State._viewerReact; State._viewerReact=null;
+    if(react) await Term.print(State.campaign.handler.name+":: "+Game.fmt(react),{cls:"c-handler"});
+    Term.setPrompt(State.prompt()); Term.showInput(true); Line.clear();
   }
 };
 
@@ -2426,6 +3068,10 @@ const Validator = {
       if(!Puzzles.has(m.puzzleId)) errs.push(tag+"unknown puzzleId '"+m.puzzleId+"'.");
       if(!m.unlockCmd) errs.push(tag+"missing unlockCmd.");
       else if(typeof Commands!=="undefined" && Commands.get && !Commands.get(m.unlockCmd)) errs.push(tag+"unlockCmd '"+m.unlockCmd+"' is not a registered command.");
+      if(m.decision){
+        if(!Array.isArray(m.decision.options)||!m.decision.options.length) errs.push(tag+"decision has no options.");
+        else m.decision.options.forEach(o=>{ if(!o.label) errs.push(tag+"a decision option is missing a label."); });
+      }
       const t=c.targets&&c.targets[m.targetId];
       if(!t){ errs.push(tag+"targetId '"+m.targetId+"' not in targets."); return; }
       if(!t.files||!t.files[m.objective]) errs.push(tag+"objective '"+m.objective+"' not a file on "+m.targetId+".");
@@ -2457,7 +3103,7 @@ async function bootIntoCampaign(id){
   CampaignManager.load(id);
   State.connectedTo=null; State.accessGranted=false; State.downloaded={}; State.stash={}; State.filesSeen={};
   State.missionIndex=0; State.credits=0; State.tools={ scrubber:false, analyzer:false, failsafe:0 };
-  State.history=[]; State.histIdx=0; State.choice=null;
+  State.history=[]; State.histIdx=0; State.choice=null; State.flags={};
   $("#hud-proof").textContent=State.credits;
   Audio.arpStop();
   Trace.reset();
@@ -2481,7 +3127,7 @@ async function tabComplete(){
   else {
     const cmd=parts[0].toLowerCase(); frag=parts[parts.length-1];
     const fileCmds=["cat","read","open","more","download","get","exfil"];
-    if(fileCmds.includes(cmd)) pool=State.target?Object.keys(State.target.files):Object.keys(State.stash);
+    if(fileCmds.includes(cmd)) pool=State.target?Object.keys(State.target.files).filter(n=>!Game.fileHidden(State.target.files[n])):Object.keys(State.stash);
     else if(cmd==="connect"||cmd==="dial"||cmd==="ssh"){ const m=State.mission; pool=m?[m.targetId]:[]; }
     else if(cmd==="buy") pool=SHOP.map(s=>s.key);
     else if(cmd==="man") pool=Commands.primary();
@@ -2576,6 +3222,10 @@ function onKey(e){
   if(State.mode==="boot"||State.mode==="end"){ return; }
   if(State.mode==="settings"){
     if(e.key==="Escape"){ e.preventDefault(); Settings.close(); }
+    return;
+  }
+  if(State.mode==="viewer"){
+    if(e.key==="Escape"||e.key==="Enter"||e.key===" "||e.code==="Space"){ e.preventDefault(); Media.close(); }
     return;
   }
   if(State.mode==="choice"){

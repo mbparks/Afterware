@@ -23,7 +23,7 @@ Each contract follows the same rhythm:
 5. `ls` and `cat <file>` to read the leaked documents, then `download <objective>` to exfiltrate the file the contract wants.
 6. `disconnect` to get out clean before the trace meter fills.
 
-Everything you download is kept on your deck. After you disconnect, `ls` lists your local archive and `cat <file>` rereads any file you have pulled, so the dossier you assemble stays with you for the whole run.
+Everything you download is kept on your deck. After you disconnect, `ls` lists your local archive and `cat <file>` rereads any file you have pulled, so the dossier you assemble stays with you for the whole run. Not every file is text: some are images that render as phosphor stills on the CRT, or audio recordings that play with a waveform. Open them the same way, with `cat` (or `view` / `play`), and they archive and reopen just like text.
 
 Read the files. The story lives in them. The corporation's secret unspools document by document, and the ending reframes who your handler really is. STATIC reacts as you go, to a clean breach, to a near-miss with the trace, and to specific documents you open.
 
@@ -99,8 +99,8 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `route` | | Route past a firewall |
 | `intercept` | | Intercept a packet window |
 | `social` | | Talk your way past a person |
-| `ls` | `dir` | List files on the node, or your downloads at the deck |
-| `cat <file>` | `read`, `open`, `more` | Read a file on the node, or a downloaded file at the deck |
+| `ls` | `dir` | List files (image files tag `[img]`, audio `[aud]`) |
+| `cat <file>` | `read`, `open`, `more`, `view`, `play` | Read a file, view an image, or play a recording |
 | `download <file>` | `get`, `exfil` | Exfiltrate a file |
 | `cover` | `scrub`, `wipe` | Wipe logs to cut the trace (while connected) |
 | `disconnect` | `exit`, `logout`, `quit` | Close the current connection |
@@ -147,6 +147,19 @@ A shorter, three-contract story in a different key. Decades ago a crew of ideali
 1. **DIAL TONE** (`vms.argus-legacy.net`, social): talk your way past the helpdesk on a forgotten phone switch and pull an old directory.
 2. **THE OLD CREW** (`hr.argus-corp.net`, decrypt): break the personnel vault and learn what happened to the crew, and which of them sold the rest.
 3. **PANOPTICON** (`core.argus-panopticon`, intercept): reach the surveillance core, take the watch ledger, and decide whether to close the eyes alone, walk away, or wake the scattered old underground and take ARGUS together.
+
+## Campaign 03: THE ASHFALL FILE
+
+A four-contract paranormal-investigation story, written as original fan fiction in homage to 1990s monster-of-the-week television, and the campaign that shows off Afterware's branching. A town named Ashfall lost four hours of one Tuesday, every resident at once, and two FBI agents who tried to investigate were quietly pulled off the case. Your handler is a trio of paranoid hackers who recruited you to dig where the agents legally cannot.
+
+What makes it different is that your choices reshape the case as you go, not just at the end. After each of the first three contracts the handler puts a decision to you: loop the agents in or keep them clean, grab hard physical proof or stay deniable, extract a frightened witness or stay invisible. Each choice sets the story's course. Later beats change to reflect it, a piece of evidence unlocks only if you went after it, and the finale offers different paths and different endings depending on what you did. Going after proof and saving the witness, for instance, unlocks an ending the cautious player never sees. The signature document style is here too: every locked file pairs the believer agent's paranormal reading with the skeptic doctor's clinical one, and the Scrubber recovers the buried memos where the cover-up shows. It runs in a cold blue tint.
+
+1. **COLD OPEN** (`ecf.fbi-field.gov`, crack): break the field-office records and pull the original case file, then decide whether to bring the agents in.
+2. **PROVISIONAL FINDINGS** (`morgue.cascade-county.gov`, decrypt): break the seal on a returnee's autopsy, then choose proof or deniability.
+3. **MISSING TIME** (`relay.ashfall-station.net`, route): route past a "decommissioned" station, then decide whether to save the dissenting witness.
+4. **TRUST NO ONE** (`archive.blue-level.gov`, intercept): reach the archive that appears on no chart and choose what the truth is worth, with the options shaped by everything you did to get there.
+
+This campaign is original fan fiction featuring established characters and is intended as a personal, non-commercial piece.
 
 ## Architecture
 

@@ -232,8 +232,8 @@ body{
 
 /* ---- continue-code sticky note, stuck beside the monitor ---- */
 #sticky{
-  position:absolute; right:-66px; top:40%;
-  width:132px; min-height:128px; padding:16px 10px 12px;
+  position:absolute; right:10px; top:30px;
+  width:124px; min-height:122px; padding:15px 10px 12px;
   background:linear-gradient(180deg,#fde047 0%,#facc15 100%);
   color:#3a2e00;
   font-family:"Comic Sans MS","Segoe Print","Bradley Hand","Marker Felt",cursive;
@@ -250,7 +250,7 @@ body{
 #sticky .note-code{ font-size:34px; font-weight:bold; letter-spacing:5px; margin-top:8px; }
 #sticky .note-hint{ font-size:10px; margin-top:10px; opacity:.7; }
 @media (max-width:1180px){
-  #sticky{ right:6px; top:-2px; transform:rotate(4deg) scale(.92); }
+  #sticky{ right:8px; top:20px; transform:rotate(4deg) scale(.9); }
 }
 
 /* ---- HUD additions: proof + objective ---- */
@@ -1325,6 +1325,7 @@ const Game = {
       Game.markGuideSeen();
     }
     await Term.print("target acquired. begin with 'scan'.",{cls:"c-amber"});
+    await Term.print("(continue code for this contract: "+Continue.forMission(State.missionIndex)+" -- also on the sticky note. resume later with 'resume "+Continue.forMission(State.missionIndex)+"'.)",{cls:"c-faint"});
     await Term.blank();
   },
   seenGuide(){ try { return !!(Save.read()||{}).guideSeen; } catch(e){ return State._guideSeen; } },
@@ -1465,8 +1466,11 @@ const Game = {
     // the run is finished: drop the resume-run from the save, keep settings + imported packs
     try { const d=Save.read(); if(d){ d.run=null; window.localStorage.setItem(Save.KEY, JSON.stringify(d)); } } catch(e){}
     await Term.blank();
-    await Term.print("returning to the campaign library ...",{cls:"c-dim"});
-    await sleep(1400);
+    await Term.print("[ press ENTER to return to the campaign library ]",{cls:"c-amber"});
+    Term.showInput(false);
+    // wait for the player; the key handler resolves this when ENTER is pressed
+    await new Promise(resolve=>{ this._endResolve=resolve; });
+    this._endResolve=null;
     CampaignManager.openLibrary(false);
   }
 };
@@ -3219,7 +3223,11 @@ async function submitLine(){
 
 function onKey(e){
   if(State.mode==="off"){ e.preventDefault(); Boot.powerOn(); return; }
-  if(State.mode==="boot"||State.mode==="end"){ return; }
+  if(State.mode==="boot"){ return; }
+  if(State.mode==="end"){
+    if((e.key==="Enter"||e.key===" "||e.code==="Space") && Game._endResolve){ e.preventDefault(); Audio.key(); const r=Game._endResolve; Game._endResolve=null; r(); }
+    return;
+  }
   if(State.mode==="settings"){
     if(e.key==="Escape"){ e.preventDefault(); Settings.close(); }
     return;

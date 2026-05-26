@@ -1006,12 +1006,42 @@ const Commands = (() => {
       const name=(parts.shift()||"").toLowerCase();
       if(!name) return;
       const cmd=reg[name];
-      if(!cmd){ Audio.err(); await Term.print("command not recognized: "+name,{cls:"c-red"});
-        await Term.print("type 'help' for available operations.",{cls:"c-dim"}); return; }
-      await cmd.run(parts);
+      if(!cmd){
+        Audio.err(); await Term.print("command not recognized: "+name,{cls:"c-red"});
+        const guess=nearestCommand(name);
+        if(guess) await Term.print("did you mean '"+guess+"'?",{cls:"c-amber"});
+        await Term.print("type 'help' for available operations.",{cls:"c-dim"}); return;
+      }
+      try {
+        await cmd.run(parts);
+      } catch(err){
+        // error boundary: a thrown command or puzzle never soft-locks the deck
+        console.error("[afterware] command '"+name+"' threw:", err);
+        try { if(typeof Puzzles!=="undefined" && Puzzles.isOpen && Puzzles.isOpen()) Puzzles.abort(); } catch(e){}
+        if(State.mode!=="end" && State.mode!=="menu") State.mode="terminal";
+        State.busy=false;
+        await Term.print("// the deck hiccuped on that one. nothing broke; try again.",{cls:"c-amber"});
+      }
     }
   };
 })();
+
+/* nearest registered command by edit distance, for 'did you mean' */
+function nearestCommand(name){
+  const all=Commands.names(); let best=null, bestD=99;
+  for(const c of all){
+    const d=editDistance(name,c);
+    if(d<bestD){ bestD=d; best=c; }
+  }
+  return (bestD<=2 && bestD<name.length) ? best : null;
+}
+function editDistance(a,b){
+  const m=a.length,n=b.length, dp=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+  for(let j=0;j<=n;j++) dp[0][j]=j;
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
+    dp[i][j]=Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return dp[m][n];
+}
 
 /* ---- shared helpers for commands ---- */
 function connected(){ return !!State.connectedTo; }
@@ -1044,15 +1074,24 @@ const Continue = {
 
 /* ===================== [GAME] flow controller ============================= */
 const Game = {
+  nextStep(){
+    const m=State.mission;
+    if(!m) return { obj:"standby", hint:"you are at the deck. open the 'library' to choose a campaign." };
+    if(!State.connectedTo) return {
+      obj:"locate and connect to "+m.targetId,
+      hint:"find the target with 'scan', then dial in with 'connect "+m.targetId+"'." };
+    if(!State.accessGranted) return {
+      obj:"breach the locked subsystem with '"+m.unlockCmd+"'",
+      hint:"map the node with 'probe', then run '"+m.unlockCmd+"' to open the lock." };
+    if(!State.downloaded[m.objective]) return {
+      obj:"exfiltrate "+m.objective,
+      hint:"list files with 'ls', read them with 'cat <file>', then 'download "+m.objective+"'." };
+    return { obj:"disconnect to bank the contract", hint:"you have what you came for. type 'disconnect' to get out clean." };
+  },
   updateObj(){
     const o=$("#hud-obj"); const m=State.mission;
     if(!m){ o.textContent="standby"; return; }
-    let t;
-    if(!State.connectedTo) t="locate and connect to "+m.targetId;
-    else if(!State.accessGranted) t="breach the locked subsystem with '"+m.unlockCmd+"'";
-    else if(!State.downloaded[m.objective]) t="exfiltrate "+m.objective;
-    else t="disconnect to bank the contract";
-    o.textContent=t; $("#objbar").classList.add("live");
+    o.textContent=this.nextStep().obj; $("#objbar").classList.add("live");
   },
   resetStats(){ State.stats={ filesRead:0, nearMiss:false, puzzleFails:0 }; State.coverUses=0; },
   async readFile(name, fileObj){
@@ -1124,9 +1163,25 @@ const Game = {
     this.updateObj();
     await Term.print("\u2500\u2500 CONTRACT "+String(State.missionIndex+1).padStart(2,"0")+" :: "+m.codename+" \u2500\u2500",{cls:"c-cyan"});
     for(const line of m.briefing) await Term.print(line,{cls:"c-dim"});
+    // first-run orientation: shown once, on the very first contract, then remembered
+    if(State.missionIndex===0 && !Game.seenGuide()){
+      await Term.blank();
+      await Term.print("[ first time on a deck? here is the whole loop ]",{cls:"c-amber"});
+      await Term.print("  scan ....... find the target host",{cls:"c-faint",speed:3});
+      await Term.print("  connect ... dial into it",{cls:"c-faint",speed:3});
+      await Term.print("  probe ..... map it and reveal the lock",{cls:"c-faint",speed:3});
+      await Term.print("  "+m.unlockCmd.padEnd(9)+". open the lock (this contract's verb)",{cls:"c-faint",speed:3});
+      await Term.print("  ls / cat .. list and read the files (the story lives here)",{cls:"c-faint",speed:3});
+      await Term.print("  download .. take the file the contract wants",{cls:"c-faint",speed:3});
+      await Term.print("  disconnect get out clean",{cls:"c-faint",speed:3});
+      await Term.print("the OBJ line up top always shows your next step. type 'hint' any time. no clock punishes reading.",{cls:"c-faint",speed:3});
+      Game.markGuideSeen();
+    }
     await Term.print("target acquired. begin with 'scan'.",{cls:"c-amber"});
     await Term.blank();
   },
+  seenGuide(){ try { return !!(Save.read()||{}).guideSeen; } catch(e){ return State._guideSeen; } },
+  markGuideSeen(){ State._guideSeen=true; try { const d=Save.read()||{}; d.guideSeen=true; if(Save.available()) window.localStorage.setItem(Save.KEY, JSON.stringify(d)); } catch(e){} },
   async connectTo(host){
     const m=State.mission;
     const decoy=(m.decoys||[]).find(d=> (typeof d==="string"? d.split(/\s/)[0] : d.host)===host );
@@ -1188,6 +1243,7 @@ const Game = {
     Audio.ok();
     State.downloaded[file]=true;
     State.stash[file]={ host:State.connectedTo, file:t.files[file] };   // keep a local copy on the deck
+    Save.write();
     if(file===m.objective){
       await Term.print("payload secured.",{cls:"bright"});
       if(m.beats.onDownload) for(const l of m.beats.onDownload) await Term.print(this.fmt(l),{cls:"c-handler"});
@@ -1220,6 +1276,7 @@ const Game = {
     if(State.missionIndex>=c.missions.length-1){ await this.ending(); return; }
     await Term.print("spend proof at the 'store' before the next contract.",{cls:"c-dim"});
     State.missionIndex++;
+    Save.write();
     await Term.blank();
     await this.briefing();
   },
@@ -1256,6 +1313,8 @@ const Game = {
     await Term.blank();
     await Term.print("\u2500\u2500 "+c.title+" :: END OF LINE \u2500\u2500",{cls:"bright"});
     await this.credits();
+    // the run is finished: drop the resume-run from the save, keep settings + imported packs
+    try { const d=Save.read(); if(d){ d.run=null; window.localStorage.setItem(Save.KEY, JSON.stringify(d)); } } catch(e){}
     await Term.blank();
     await Term.print("returning to the campaign library ...",{cls:"c-dim"});
     await sleep(1400);
@@ -1268,6 +1327,12 @@ Bus.on("system.caught", () => Game.caught());
 Commands.register({name:"help", aliases:["?","commands"], help:"list available operations", run:async()=>{
   await Term.print("AVAILABLE OPERATIONS",{cls:"c-cyan"});
   for(const c of Commands.visible()) await Term.print("  "+c.name.padEnd(12)+c.help,{cls:"c-dim",speed:3});
+  await Term.print("stuck? type 'hint' for the next step, plainly.",{cls:"c-faint"});
+}});
+
+Commands.register({name:"hint", aliases:["next","stuck"], help:"tell me the next step, plainly (no penalty)", run:async()=>{
+  const step=Game.nextStep();
+  await Term.print("\u2192 "+step.hint,{cls:"c-cyan"});
 }});
 
 Commands.register({name:"scan", help:"scan local net for reachable hosts", run:async()=>{
@@ -2056,8 +2121,16 @@ const CampaignManager = {
     });
     Term.instant("  [A]  + ADD A CAMPAIGN","c-amber");
     Term.instant("        paste your own contract set (see CAMPAIGN_AUTHORING).","c-faint");
+    const sv=State._save;
+    const canResume = sv && sv.run && sv.run.campaign && Campaigns.get(sv.run.campaign);
+    if(canResume){
+      const rc=Campaigns.get(sv.run.campaign);
+      Term.instant("",);
+      Term.instant("  [C]  CONTINUE SAVED RUN","c-cyan");
+      Term.instant("        "+rc.title+", contract "+String((sv.run.missionIndex||0)+1).padStart(2,"0")+", proof "+(sv.run.credits||0)+".","c-faint");
+    }
     Term.instant("",);
-    Term.instant("press a number to play, or A to add. you can return here any time by typing 'library'.","c-amber");
+    Term.instant("press a number to play, A to add"+(canResume?", C to continue":"")+". return here any time by typing 'library'.","c-amber");
   },
   openMenu(){ this.openLibrary(false); },   // back-compat alias
   renderMenu(){ this.openLibrary(false); },
@@ -2067,6 +2140,26 @@ const CampaignManager = {
     bootIntoCampaign(list[n-1].id);
   },
   addFromLibrary(){ Audio.beep(); Settings.open(true); },   // open settings focused on import
+  async restoreRun(){
+    const sv=State._save; if(!sv||!sv.run||!Campaigns.get(sv.run.campaign)){ return; }
+    Audio.ok();
+    CampaignManager.load(sv.run.campaign);
+    const r=sv.run;
+    State.missionIndex=r.missionIndex||0; State.credits=r.credits||0;
+    State.tools=Object.assign({scrubber:false,analyzer:false,failsafe:0}, r.tools||{});
+    State.stash=r.stash||{}; State.downloaded=r.downloaded||{}; State.filesSeen=r.filesSeen||{};
+    State.connectedTo=null; State.accessGranted=false; State.history=[]; State.histIdx=0;
+    $("#hud-proof").textContent=State.credits;
+    Trace.reset();
+    await Term.clear();
+    State.mode="terminal"; State.busy=true; Term.showInput(false);
+    await Term.print("restoring saved run :: "+State.campaign.title+", contract "+String(State.missionIndex+1).padStart(2,"0")+".",{cls:"c-cyan"});
+    if(Object.keys(State.stash).length) await Term.print(Object.keys(State.stash).length+" file(s) in your deck archive ('ls').",{cls:"c-faint"});
+    await Term.blank();
+    await Game.briefing();
+    State.busy=false;
+    Term.setPrompt(State.prompt()); Term.showInput(true); Line.clear();
+  },
   load(id){ State.campaign=Campaigns.get(id); State.missionIndex=0;
     const issues=Validator.check(State.campaign);
     if(issues.length){
@@ -2126,7 +2219,7 @@ Commands.register({name:"buy", help:"purchase a tool  (buy <tool>)",
   if(!it){ await Term.print("no such tool. see 'store'.",{cls:"c-amber"}); return; }
   if(!it.stack && it.owned()){ await Term.print("already owned.",{cls:"c-dim"}); return; }
   if(State.credits<it.price){ await Term.print("not enough proof. need "+it.price+", have "+State.credits+".",{cls:"c-red"}); Audio.err(); return; }
-  State.credits-=it.price; it.buy(); $("#hud-proof").textContent=State.credits; Audio.ok();
+  State.credits-=it.price; it.buy(); $("#hud-proof").textContent=State.credits; Audio.ok(); Save.write();
   await Term.print("acquired: "+it.name+".  (proof left "+State.credits+")",{cls:"bright"});
 }});
 
@@ -2159,6 +2252,17 @@ Commands.register({name:"add-campaign", aliases:["import","add"], help:"paste yo
        "once added it appears in the library, where you can play it."],
   run:async()=>{ Settings.open(true); }});
 
+Commands.register({name:"forget", aliases:["wipe-save"], help:"erase local save data (settings, imported packs, progress)",
+  man:["clears everything Afterware has saved on this machine: your settings,",
+       "any campaigns you imported, and your in-progress run. built-in campaigns stay.",
+       "this cannot be undone. the deck keeps running; only the saved data is gone."],
+  run:async()=>{
+  if(!Save.available()){ await Term.print("no local storage available here, so nothing is saved to forget.",{cls:"c-dim"}); return; }
+  const had=!!Save.read();
+  Save.clear(); State._save=null;
+  await Term.print(had?"local save erased. settings, imported packs, and progress are cleared.":"there was no saved data to erase.",{cls:"c-amber"});
+}});
+
 /* ---- theme palettes (player-facing phosphor swap) ---- */
 const THEMES={
   green:{ "--phosphor":"#5cff86","--phosphor-dim":"#2aa14a","--phosphor-faint":"#11491f","--glow":"0 0 1px rgba(150,255,180,.5),0 0 4px rgba(90,255,134,.18)" },
@@ -2168,6 +2272,62 @@ const THEMES={
 };
 const FX_LEVELS=["full","reduced","minimal"];
 const THEME_KEYS=["green","amber","ice","neon"];
+
+/* ---- Save: optional local persistence (works when run as a saved file;
+   degrades silently in sandboxes where localStorage is blocked) ----------- */
+const Save = {
+  KEY:"afterware.save.v1",
+  available(){
+    try { const k="__aw_t"; window.localStorage.setItem(k,"1"); window.localStorage.removeItem(k); return true; }
+    catch(e){ return false; }
+  },
+  write(){
+    if(!this.available()) return false;
+    try {
+      // only campaigns the player imported (have _imported flag); built-ins ship in source
+      const packs=Campaigns.list().filter(c=>c._imported).map(c=>c._raw);
+      const data={
+        settings:State.settings,
+        handle:State.user,
+        packs,
+        run:{
+          campaign: State.campaign?State.campaign.id:null,
+          missionIndex:State.missionIndex, credits:State.credits,
+          tools:State.tools, stash:State.stash, downloaded:State.downloaded,
+          filesSeen:State.filesSeen
+        }
+      };
+      window.localStorage.setItem(this.KEY, JSON.stringify(data));
+      return true;
+    } catch(e){ console.warn("[afterware] save failed:",e); return false; }
+  },
+  read(){
+    if(!this.available()) return null;
+    try { const s=window.localStorage.getItem(this.KEY); return s?JSON.parse(s):null; }
+    catch(e){ return null; }
+  },
+  clear(){
+    if(!this.available()) return false;
+    try { window.localStorage.removeItem(this.KEY); return true; } catch(e){ return false; }
+  },
+  // re-register any imported packs from a save so they appear in the library
+  restorePacks(data){
+    if(!data || !Array.isArray(data.packs)) return 0;
+    let n=0;
+    for(const raw of data.packs){
+      try {
+        const obj=(typeof raw==="string")?(new Function("return ("+raw+")"))():raw;
+        if(obj && obj.id && Validator.check(obj).length===0){ obj._imported=true; obj._raw=raw; Campaigns.register(obj); n++; }
+      } catch(e){ /* skip a corrupt pack */ }
+    }
+    return n;
+  },
+  // apply saved settings (called early in init)
+  applySettings(data){
+    if(data && data.settings) State.settings=Object.assign(State.settings, data.settings);
+    if(data && data.handle) State._savedHandle=data.handle;
+  }
+};
 
 /* ---- Settings / import panel ---- */
 const Settings = {
@@ -2213,10 +2373,10 @@ const Settings = {
     State.mode=this._prev;
     if(State.mode==="terminal"){ Term.setPrompt(State.prompt()); Term.showInput(true); }
   },
-  cycleFx(){ const i=FX_LEVELS.indexOf(State.settings.fx); State.settings.fx=FX_LEVELS[(i+1)%FX_LEVELS.length]; this.apply(); this.refresh(); },
-  cycleTheme(){ const i=THEME_KEYS.indexOf(State.settings.theme); State.settings.theme=THEME_KEYS[(i+1)%THEME_KEYS.length]; this.apply(); this.refresh(); },
-  toggleMusic(){ State.settings.music=!State.settings.music; this.apply(); this.refresh(); if(State.settings.music && State.accessGranted) Audio.arpStart(); Audio.beep(); },
-  vol(d){ State.settings.volume=Math.max(0,Math.min(1,Math.round((State.settings.volume+d)*10)/10)); this.apply(); this.renderVol(); Audio.beep(); },
+  cycleFx(){ const i=FX_LEVELS.indexOf(State.settings.fx); State.settings.fx=FX_LEVELS[(i+1)%FX_LEVELS.length]; this.apply(); this.refresh(); Save.write(); },
+  cycleTheme(){ const i=THEME_KEYS.indexOf(State.settings.theme); State.settings.theme=THEME_KEYS[(i+1)%THEME_KEYS.length]; this.apply(); this.refresh(); Save.write(); },
+  toggleMusic(){ State.settings.music=!State.settings.music; this.apply(); this.refresh(); if(State.settings.music && State.accessGranted) Audio.arpStart(); Audio.beep(); Save.write(); },
+  vol(d){ State.settings.volume=Math.max(0,Math.min(1,Math.round((State.settings.volume+d)*10)/10)); this.apply(); this.renderVol(); Audio.beep(); Save.write(); },
   async importPack(){
     const area=$("#imp-area"), msg=$("#imp-msg");
     let raw=(area&&area.value)||"";
@@ -2227,9 +2387,11 @@ const Settings = {
     const issues=Validator.check(obj);
     if(issues.length){ if(msg){msg.innerHTML="rejected, not loaded:<br>"+issues.map(x=>"&bull; "+x).join("<br>"); msg.className="failnote";} return; }
     const fresh=!Campaigns.get(obj.id);
+    obj._imported=true; obj._raw=raw;     // mark as player-imported so it can be saved
     Campaigns.register(obj);
     if(area) area.value="";
     if(msg){ msg.textContent=(fresh?"added":"updated")+" '"+obj.title+"'. it's now in your library."; msg.className="c-cyan"; }
+    Save.write();
     this._prev="menu";          // send the player back to the library to see it listed
     setTimeout(()=>this.close(), 900);
   },
@@ -2428,6 +2590,7 @@ function onKey(e){
   if(State.mode==="menu"){
     if(/^[1-9]$/.test(e.key)){ Audio.key(); CampaignManager.pickMenu(parseInt(e.key,10)); return; }
     if(e.key==="a"||e.key==="A"){ CampaignManager.addFromLibrary(); return; }
+    if(e.key==="c"||e.key==="C"){ const sv=State._save; if(sv&&sv.run&&sv.run.campaign&&Campaigns.get(sv.run.campaign)){ Audio.key(); CampaignManager.restoreRun(); } return; }
     return;
   }
   // login / terminal line editing
@@ -2464,6 +2627,9 @@ function init(){
     e.currentTarget.innerHTML = m ? "&#9834; OFF" : "&#9835; SND";
   });
   FX.init();
+  // load any local save: settings, imported campaigns, and a resumable run
+  const saved=Save.read();
+  if(saved){ Save.applySettings(saved); Save.restorePacks(saved); State._save=saved; }
   Settings.wire();
   Settings.apply();
   // initial power-off splash

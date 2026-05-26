@@ -69,7 +69,7 @@ A campaign can define its own thematic codes in a `continueCodes` array. If it d
 
 The library is your home base. It opens right after you enter a handle, you return to it automatically when a campaign ends, and you can go back to it any time from the deck by typing `library`. It lists every campaign loaded on the deck, each with its title and a one-line description, plus an ADD A CAMPAIGN entry at the bottom.
 
-From the library you press a number to play a campaign, or press A to add your own. Playing a campaign starts it from its first contract. Returning to the library and picking a different one switches stories, so note your continue code first if you want to come back to where you were.
+From the library you press a number to play a campaign, or press A to add your own. Playing a campaign starts it from its first contract. If you have a saved run in progress, a CONTINUE SAVED RUN entry also appears (press C) that drops you back exactly where you left off. Returning to the library and picking a different campaign switches stories.
 
 To add a campaign, press A in the library (or type `add-campaign` at the deck). That opens an importer where you paste a campaign pack, an object or JSON, and press LOAD PACK. The pack is validated before anything happens: a broken one is rejected with a list of reasons and nothing changes, and a valid one is added to your library, where it appears in the list ready to play. See `CAMPAIGN_AUTHORING.md` for how to write one.
 
@@ -113,6 +113,8 @@ Intrusion verbs only work when they match the current contract's locked subsyste
 | `library` | `campaigns`, `menu`, `sets` | Open the campaign library to switch or add a campaign |
 | `add-campaign` | `import`, `add` | Paste your own campaign pack to add it |
 | `man <command>` | | Detailed help for a command |
+| `hint` | `next`, `stuck` | Tell you the next step, plainly (no penalty) |
+| `forget` | `wipe-save` | Erase local save data |
 | `clear` | `cls` | Clear the screen |
 
 The line editor supports the up and down arrows to walk back through your command history, and Tab to complete command names and, after a file command, filenames on the current node.
@@ -247,10 +249,16 @@ Tunable constants live in the `CONFIG` block at the top of the script:
 
 The look is driven by CSS variables in the `:root` block. The player can switch the screen tint between green, amber, ice blue, and neon from the settings panel. A campaign can still set a default tint per story with `themeOverrides`, a map of CSS variable names and values that the campaign manager applies on load.
 
+## Saving
+
+When you run Afterware as a file on your own machine, it quietly saves to your browser's local storage: your settings (volume, effects, theme, music), any campaigns you imported, and your current run. Reopen the file and the library offers to continue where you left off, and your imported campaigns are still there. The first-run orientation is also remembered, so it only shows once.
+
+This is best effort and private to your machine. It does not sync anywhere, and in environments that block local storage (such as a sandboxed preview) the deck simply runs without saving, exactly as before. To erase everything saved, type `forget` at the deck. That clears settings, imported packs, and progress, but never the built-in campaigns.
+
 ## Technical notes
 
 - Vanilla JavaScript only. CRT effects favor CSS and a light animation loop to hold a steady frame rate.
-- Nothing is persisted. Each load is a fresh boot. Refresh the page to run the campaign again.
+- When opened as a local file, settings, imported campaigns, and progress are saved to your browser's local storage (see Saving). In sandboxed previews that block storage, each load is a fresh boot.
 - All audio is synthesized at runtime with the Web Audio API. There are no asset files.
 - Tested in current versions of Chromium-based browsers and Firefox.
 

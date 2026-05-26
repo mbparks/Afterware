@@ -10,7 +10,7 @@ This guide covers the full schema, the built-in puzzles and their specs, the val
 2. Press A (ADD A CAMPAIGN), or type `add-campaign` at the deck.
 3. Paste your campaign object (or JSON) into the box and press LOAD PACK.
 
-The deck validates the pack first. If anything is wrong it refuses to add it and lists the reasons, leaving your library unchanged. If it passes, the pack is added to your library, where it appears in the list ready to play. The importer accepts either strict JSON or a plain JavaScript object literal, so trailing commas and unquoted keys are fine.
+The deck validates the pack first. If anything is wrong it refuses to add it and lists the reasons, leaving your library unchanged. If it passes, the pack is added to your library, where it appears in the list ready to play. The importer accepts either strict JSON or a plain JavaScript object literal, so trailing commas and unquoted keys are fine. When Afterware runs as a local file, imported packs are saved to your browser's local storage and are still in the library next time you open it (type `forget` at the deck to clear saved data).
 
 To ship a campaign permanently instead, drop it into the source and register it:
 
